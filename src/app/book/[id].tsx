@@ -1,14 +1,11 @@
 import { Image } from 'expo-image';
-import type { File } from 'expo-file-system';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import * as Sharing from 'expo-sharing';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import { cancelDownload, startDownload, useDownload } from '../../lib/downloads';
-import { exportEpub, saveToFolder } from '../../lib/exportEpub';
 import { refreshChapterList, removeBook, useBook } from '../../lib/library';
 import { useSettings } from '../../lib/settings';
 import { coverFile } from '../../lib/storage';
@@ -68,10 +65,6 @@ const ChapterRow = memo(function ChapterRow({
   );
 });
 
-function formatSize(bytes: number) {
-  return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
 function firstMissing(book: Book): number {
   const have = new Set(book.downloaded);
   for (let i = 0; i < book.chapters.length; i++) if (!have.has(i)) return i;
@@ -88,8 +81,6 @@ export default function BookScreen() {
   const start = book ? Math.min(firstMissing(book), Math.max(0, total - 1)) : 0;
   const [fromText, setFromText] = useState(String(start + 1));
   const [toText, setToText] = useState(String(Math.min(start + 10, total)));
-  const [exporting, setExporting] = useState(false);
-  const [exported, setExported] = useState<{ file: File; count: number; missing: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -143,7 +134,6 @@ export default function BookScreen() {
 
   const doDownload = (from: number, to: number, translate?: boolean) => {
     const indexes = Array.from({ length: to - from + 1 }, (_, k) => from + k);
-    setExported(null);
     startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('İndirme hatası', (e as Error).message));
   };
 
@@ -166,7 +156,6 @@ export default function BookScreen() {
     if (translate && needsKey()) return;
     const indexes = [...selected].sort((a, b) => a - b);
     setSelected(new Set());
-    setExported(null);
     startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('Hata', (e as Error).message));
   };
 
@@ -184,80 +173,6 @@ export default function BookScreen() {
   const onDownload = () => {
     const r = parseRange();
     if (r) doDownload(r[0], r[1]);
-  };
-
-  const onExport = async () => {
-    const r = parseRange();
-    if (!r) return;
-    const [from, to] = r;
-    let missing = 0;
-    for (let i = from; i <= to; i++) if (!downloaded.has(i)) missing++;
-    let anyTr = false;
-    for (let i = from; i <= to && !anyTr; i++) anyTr = translatedSet.has(i);
-    const build = async (turkish: boolean) => {
-      setExporting(true);
-      setExported(null);
-      try {
-        const res = await exportEpub(book, from, to, turkish);
-        setExported({ file: res.file, count: res.chapterCount, missing: res.missing });
-      } catch (e) {
-        Alert.alert('EPUB oluşturulamadı', (e as Error).message);
-      } finally {
-        setExporting(false);
-      }
-    };
-    const run = () => {
-      if (!anyTr) return build(false);
-      Alert.alert('Hangi dilde?', 'Bu aralıkta Türkçe çevrilmiş bölümler var. Çevrilmemiş bölümler orijinal dilinde eklenir.', [
-        { text: 'Orijinal', onPress: () => build(false) },
-        { text: 'Türkçe', onPress: () => build(true) },
-      ]);
-    };
-    if (missing === 0) return run();
-    if (missing === to - from + 1) {
-      Alert.alert('Bölümler indirilmemiş', 'Bu aralıktaki bölümler henüz indirilmedi. Şimdi indirilsin mi?', [
-        { text: 'Vazgeç', style: 'cancel' },
-        { text: 'İndir', onPress: () => doDownload(from, to) },
-      ]);
-      return;
-    }
-    Alert.alert('Eksik bölümler var', `Bu aralıkta ${missing} bölüm henüz indirilmedi.`, [
-      { text: 'Vazgeç', style: 'cancel' },
-      { text: 'Olanlarla oluştur', onPress: run },
-      { text: 'Önce indir', onPress: () => doDownload(from, to) },
-    ]);
-  };
-
-  const share = async () => {
-    if (!exported) return;
-    if (!(await Sharing.isAvailableAsync())) {
-      Alert.alert('Paylaşım kullanılamıyor');
-      return;
-    }
-    await Sharing.shareAsync(exported.file.uri, {
-      mimeType: 'application/epub+zip',
-      dialogTitle: 'EPUB’u gönder',
-    });
-  };
-
-  const open = async () => {
-    if (!exported) return;
-    try {
-      await exported.file.preview();
-    } catch {
-      Alert.alert('Açılamadı', 'EPUB açabilen bir uygulama bulunamadı. “Paylaş” ile okuma uygulamanızı seçebilirsiniz.');
-    }
-  };
-
-  const save = async () => {
-    if (!exported) return;
-    try {
-      const where = await saveToFolder(exported.file);
-      setMessage(`Kaydedildi: ${where}`);
-    } catch (e) {
-      const msg = (e as Error).message ?? '';
-      if (!/cancel/i.test(msg)) Alert.alert('Kaydedilemedi', msg);
-    }
   };
 
   const refresh = async () => {
@@ -354,7 +269,6 @@ export default function BookScreen() {
           <Button title="İndir" onPress={onDownload} disabled={running} style={{ flex: 1 }} />
           <Button title="Türkçeye çevir" variant="secondary" onPress={onTranslate} disabled={running} style={{ flex: 1 }} />
         </View>
-        <Button title="EPUB oluştur" variant="secondary" onPress={onExport} busy={exporting} disabled={running} />
         {settings.autoTranslate && settings.hasGeminiKey && (
           <Text style={ui.muted}>Otomatik çeviri açık: “İndir” bölümleri Türkçeye de çevirir.</Text>
         )}
@@ -375,22 +289,6 @@ export default function BookScreen() {
           </View>
         )}
       </Card>
-
-      {exported && (
-        <Card style={{ gap: 10, borderColor: colors.accent }}>
-          <Text style={ui.h2}>EPUB hazır</Text>
-          <Text style={ui.text}>{exported.file.name}</Text>
-          <Text style={ui.muted}>
-            {exported.count} bölüm · {formatSize(exported.file.size ?? 0)}
-            {exported.missing ? ` · ${exported.missing} eksik bölüm atlandı` : ''}
-          </Text>
-          <View style={ui.row}>
-            <Button title="Paylaş" onPress={share} style={{ flex: 1 }} />
-            <Button title="Başka uygulamada aç" variant="secondary" onPress={open} style={{ flex: 1 }} />
-          </View>
-          <Button title="Klasöre kaydet" variant="secondary" onPress={save} />
-        </Card>
-      )}
 
       {!!message && <Text style={ui.muted}>{message}</Text>}
       <View style={ui.row}>

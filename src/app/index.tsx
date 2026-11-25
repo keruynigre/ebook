@@ -66,7 +66,7 @@ export default function Library() {
               <Text style={ui.h2}>Kitaplığınız boş</Text>
               <Text style={ui.text}>
                 Okuduğunuz romanın sayfasının bağlantısını kopyalayın (ör. novelfull.com/…html), “Roman ekle”ye
-                yapıştırın. Bölümleri indirip EPUB olarak okuma uygulamanıza gönderebilirsiniz.
+                yapıştırın. Bölümleri indirip uygulamanın içinde okuyabilir, Türkçeye çevirebilir ve dinleyebilirsiniz.
               </Text>
               <Button title="Roman ekle" onPress={() => router.push('/add')} />
             </Card>
