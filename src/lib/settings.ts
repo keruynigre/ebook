@@ -25,6 +25,11 @@ export interface ReaderSettings {
   translationPrompt: string;
   /** Whether a Gemini key is saved (the key itself lives in secure storage). */
   hasGeminiKey: boolean;
+  /** Read-aloud voices (Edge voice ids) for Turkish and English text. */
+  ttsVoiceTr: string;
+  ttsVoiceEn: string;
+  /** Read-aloud speed, 1 = normal. */
+  ttsRate: number;
 }
 
 export const READER_THEMES: Record<ReaderTheme, { bg: string; text: string; muted: string; label: string }> = {
@@ -45,6 +50,9 @@ const DEFAULTS: ReaderSettings = {
   translateConcurrency: 1,
   translationPrompt: '',
   hasGeminiKey: false,
+  ttsVoiceTr: 'tr-TR-AhmetNeural',
+  ttsVoiceEn: 'en-US-ChristopherNeural',
+  ttsRate: 1,
 };
 
 const KEY_NAME = 'gemini-api-key';

@@ -21,8 +21,21 @@ import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../..
 import { loadChapter, loadTranslation } from '../../../lib/storage';
 import { colors } from '../../../lib/theme';
 import type { ChapterContent } from '../../../lib/types';
+import {
+  narrateFrom,
+  pauseNarration,
+  restartNarration,
+  resumeNarration,
+  setNarrationRate,
+  skipParagraph,
+  startNarration,
+  stopNarration,
+  useNarration,
+} from '../../../lib/tts/narrator';
+import { VOICES, voiceName } from '../../../lib/tts/voices';
 
 const SAVE_EVERY_MS = 1500;
+const RATES = [0.75, 1, 1.15, 1.3, 1.5, 1.75, 2];
 
 export default function Reader() {
   const { id, index } = useLocalSearchParams<{ id: string; index: string }>();
@@ -41,7 +54,15 @@ export default function Reader() {
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showFonts, setShowFonts] = useState(false);
+  const [showVoices, setShowVoices] = useState(false);
+  const narr = useNarration();
+  // Paragraph positions inside the scroll content, for auto-scroll and "start here".
+  const paraLayout = useRef<{ y: number; h: number }[]>([]);
+  const scrollY = useRef(0);
+  const userScrollAt = useRef(0);
   const [translation, setTranslation] = useState<ChapterContent | null>(null);
+  // Which chapter the loaded texts belong to (state lags one render behind the route).
+  const [loadedIdx, setLoadedIdx] = useState({ chapter: -1, translation: -1 });
   const isTranslated = !!book?.translated?.includes(i);
 
   // Scroll position as a share of the chapter (0–1), so it survives font size changes.
@@ -63,7 +84,11 @@ export default function Reader() {
     position.current = restoreTo.current;
     setChapter(undefined);
     loadChapter(id, i)
-      .then((c) => alive && setChapter(c))
+      .then((c) => {
+        if (!alive) return;
+        setChapter(c);
+        setLoadedIdx((x) => ({ ...x, chapter: i }));
+      })
       .catch(() => alive && setChapter(null));
     saveProgress(id, i, position.current).catch(() => undefined);
     return () => {
@@ -76,13 +101,87 @@ export default function Reader() {
   useEffect(() => {
     let alive = true;
     setTranslation(null);
-    if (isTranslated) loadTranslation(id, i).then((t) => alive && setTranslation(t)).catch(() => undefined);
+    if (isTranslated)
+      loadTranslation(id, i)
+        .then((t) => {
+          if (!alive) return;
+          setTranslation(t);
+          setLoadedIdx((x) => ({ ...x, translation: i }));
+        })
+        .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, [id, i, isTranslated]);
 
   const shown = settings.showTranslation && translation ? translation : chapter;
+  const originalLang: 'tr' | 'en' = book?.language?.toLowerCase().startsWith('tr') ? 'tr' : 'en';
+  const shownLang: 'tr' | 'en' = shown && shown === translation ? 'tr' : originalLang;
+  const textSettled =
+    !!chapter && loadedIdx.chapter === i && (!isTranslated || !settings.showTranslation || loadedIdx.translation === i);
+  const narrHere = narr.bookId === id && narr.chapter === i && narr.status !== 'idle';
+  const highlightOn = narrHere && narr.lang === shownLang;
+  const narrActive = narr.bookId === id && narr.status !== 'idle';
+
+  // Follow the narration into the next chapter.
+  const lastNarrChapter = useRef(narr.chapter);
+  useEffect(() => {
+    const prev = lastNarrChapter.current;
+    lastNarrChapter.current = narr.chapter;
+    if (narr.bookId === id && narr.status !== 'idle' && prev === i && narr.chapter !== i) {
+      save();
+      restoreTo.current = 0;
+      router.setParams({ index: String(narr.chapter) });
+    }
+  }, [narr.chapter, narr.bookId, narr.status, id, i, save]);
+
+  // Switching Türkçe/Orijinal while listening switches the voice too.
+  useEffect(() => {
+    if (narrHere && textSettled && shown && narr.lang !== shownLang) {
+      startNarration(id, i, shown, shownLang, narr.para);
+    }
+  }, [narrHere, textSettled, shown, shownLang, narr.lang, narr.para, id, i]);
+
+  // Keep the spoken word on screen unless the person is scrolling around.
+  useEffect(() => {
+    if (!highlightOn || Date.now() - userScrollAt.current < 4000) return;
+    const view = sizes.current.view;
+    let y = 0;
+    if (narr.para >= 0) {
+      const l = paraLayout.current[narr.para];
+      const len = shown?.paragraphs[narr.para]?.length || 1;
+      if (!l) return;
+      y = l.y + (narr.start > 0 ? (narr.start / len) * l.h : 0);
+    }
+    const top = scrollY.current;
+    if (y < top + view * 0.08 || y > top + view * 0.72) {
+      scroll.current?.scrollTo({ y: Math.max(0, y - view * 0.3), animated: true });
+    }
+  }, [highlightOn, narr.para, narr.start, shown]);
+
+  const firstVisiblePara = () => {
+    if (scrollY.current < 40) return -1;
+    const k = paraLayout.current.findIndex((l) => l && l.y + l.h > scrollY.current + 10);
+    return k < 0 ? -1 : k;
+  };
+  const listen = () => {
+    if (!shown) return;
+    if (narrHere && narr.lang === shownLang) {
+      if (narr.status === 'playing' || narr.status === 'loading') pauseNarration();
+      else resumeNarration();
+      return;
+    }
+    startNarration(id, i, shown, shownLang, firstVisiblePara());
+  };
+  const cycleRate = () => {
+    const k = RATES.findIndex((r) => r >= settings.ttsRate - 0.001);
+    setNarrationRate(RATES[(k + 1) % RATES.length]);
+  };
+  const chooseVoice = (voiceId: string, lang: 'tr' | 'en') => {
+    setSettings(lang === 'tr' ? { ttsVoiceTr: voiceId } : { ttsVoiceEn: voiceId });
+    setShowVoices(false);
+    if (narrActive && narr.lang === lang) restartNarration();
+  };
 
   const tryRestore = () => {
     const target = restoreTo.current;
@@ -96,6 +195,7 @@ export default function Reader() {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const range = contentSize.height - layoutMeasurement.height;
     position.current = range > 0 ? Math.min(1, Math.max(0, contentOffset.y / range)) : 0;
+    scrollY.current = contentOffset.y;
     if (!saveTimer.current) saveTimer.current = setTimeout(save, SAVE_EVERY_MS);
   };
 
@@ -130,9 +230,14 @@ export default function Reader() {
           headerTintColor: theme.text,
           contentStyle: { backgroundColor: theme.bg },
           headerRight: () => (
-            <Pressable onPress={() => setShowSettings((v) => !v)} hitSlop={10} style={{ paddingHorizontal: 8 }}>
-              <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Aa</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
+                <Text style={{ color: theme.text, fontSize: 20 }}>{highlightOn && narr.status !== 'paused' ? '⏸' : '🎧'}</Text>
+              </Pressable>
+              <Pressable onPress={() => setShowSettings((v) => !v)} hitSlop={10} style={{ paddingHorizontal: 8 }}>
+                <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Aa</Text>
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -157,6 +262,15 @@ export default function Reader() {
             >
               <Text style={[{ color: theme.text, fontSize: 15, flex: 1 }, bodyFont]} numberOfLines={1}>
                 {font.label}
+              </Text>
+              <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
+            </Pressable>
+          </View>
+          <View style={styles.panelRow}>
+            <Text style={[styles.panelLabel, { color: theme.text }]}>Sesli okuma</Text>
+            <Pressable onPress={() => setShowVoices(true)} style={[styles.select, { borderColor: theme.muted }]}>
+              <Text style={{ color: theme.text, fontSize: 15, flex: 1 }} numberOfLines={1}>
+                {voiceName(settings.ttsVoiceTr)} · {voiceName(settings.ttsVoiceEn)}
               </Text>
               <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
             </Pressable>
@@ -235,10 +349,45 @@ export default function Reader() {
         </Pressable>
       </Modal>
 
+      <Modal visible={showVoices} transparent animationType="fade" onRequestClose={() => setShowVoices(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setShowVoices(false)}>
+          <Pressable style={[styles.sheet, { backgroundColor: theme.bg, borderColor: theme.muted }]}>
+            <ScrollView>
+              {(['tr', 'en'] as const).map((lang) => (
+                <View key={lang}>
+                  <Text style={[styles.sheetTitle, { color: theme.text, paddingTop: lang === 'en' ? 12 : 0 }]}>
+                    {lang === 'tr' ? 'Türkçe metin için ses' : 'İngilizce metin için ses'}
+                  </Text>
+                  {VOICES.filter((v) => v.lang === lang).map((v) => {
+                    const active = (lang === 'tr' ? settings.ttsVoiceTr : settings.ttsVoiceEn) === v.id;
+                    return (
+                      <Pressable
+                        key={v.id}
+                        onPress={() => chooseVoice(v.id, lang)}
+                        style={[styles.fontRow, active && { backgroundColor: colors.accent + '33' }]}
+                      >
+                        <Text style={{ color: theme.text, fontSize: 17 }}>{v.name}</Text>
+                        <Text style={{ color: theme.muted, fontSize: 12 }}>{v.note}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <ScrollView
         ref={scroll}
         onScroll={onScroll}
         scrollEventThrottle={100}
+        onScrollBeginDrag={() => {
+          userScrollAt.current = Date.now();
+        }}
+        onMomentumScrollEnd={() => {
+          userScrollAt.current = Date.now();
+        }}
         onLayout={(e) => {
           sizes.current.view = e.nativeEvent.layout.height;
           tryRestore();
@@ -249,7 +398,13 @@ export default function Reader() {
         }}
         contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 16, paddingBottom: 28 + insets.bottom }}
       >
-        <Text style={[{ color: theme.text, fontSize: settings.fontSize + 5, marginBottom: 18, lineHeight: (settings.fontSize + 5) * 1.3 }, titleFont]}>
+        <Text
+          style={[
+            { color: theme.text, fontSize: settings.fontSize + 5, marginBottom: 18, lineHeight: (settings.fontSize + 5) * 1.3 },
+            titleFont,
+            highlightOn && narr.para === -1 ? { backgroundColor: colors.accent + '33' } : null,
+          ]}
+        >
           {title}
         </Text>
         {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
@@ -257,6 +412,10 @@ export default function Reader() {
           <Text
             key={k}
             selectable
+            onLayout={(e) => {
+              paraLayout.current[k] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height };
+            }}
+            onPress={highlightOn ? () => narrateFrom(k) : undefined}
             style={{
               ...bodyFont,
               color: theme.text,
@@ -266,7 +425,15 @@ export default function Reader() {
               textAlign: /^[*\s~=\-–—•·]{3,}$/.test(p) ? 'center' : 'left',
             }}
           >
-            {p}
+            {highlightOn && narr.para === k && narr.start >= 0 ? (
+              <>
+                {p.slice(0, narr.start)}
+                <Text style={{ backgroundColor: colors.accent + '66' }}>{p.slice(narr.start, narr.end)}</Text>
+                {p.slice(narr.end)}
+              </>
+            ) : (
+              p
+            )}
           </Text>
         ))}
 
@@ -322,6 +489,50 @@ export default function Reader() {
           </View>
         )}
       </ScrollView>
+
+      {(narrActive || (narr.bookId === id && !!narr.message)) && (
+        <View style={[styles.player, { backgroundColor: theme.bg, borderColor: theme.muted, paddingBottom: 8 + insets.bottom }]}>
+          {!!narr.message && (
+            <Text style={{ color: narr.status === 'error' ? colors.danger : theme.muted, fontSize: 13 }}>{narr.message}</Text>
+          )}
+          {narrActive && (
+            <View style={styles.playerRow}>
+              <Pressable onPress={() => skipParagraph(-1)} hitSlop={8} style={styles.playerBtn}>
+                <Text style={[styles.playerIcon, { color: theme.text }]}>⏮</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => (narr.status === 'playing' || narr.status === 'loading' ? pauseNarration() : resumeNarration())}
+                hitSlop={8}
+                style={[styles.playerBtn, styles.playerMain]}
+              >
+                <Text style={[styles.playerIcon, { color: colors.accentText }]}>
+                  {narr.status === 'playing' || narr.status === 'loading' ? '⏸' : '▶'}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => skipParagraph(1)} hitSlop={8} style={styles.playerBtn}>
+                <Text style={[styles.playerIcon, { color: theme.text }]}>⏭</Text>
+              </Pressable>
+              <Pressable onPress={cycleRate} hitSlop={8} style={styles.playerBtn}>
+                <Text style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{settings.ttsRate}×</Text>
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: theme.muted, fontSize: 12 }} numberOfLines={1}>
+                  {narr.status === 'loading' ? 'Ses hazırlanıyor…' : voiceName(narr.lang === 'tr' ? settings.ttsVoiceTr : settings.ttsVoiceEn)}
+                  {narr.chapter !== i ? ` · ${narr.chapter + 1}. bölüm` : ''}
+                </Text>
+              </View>
+              <Pressable onPress={() => stopNarration()} hitSlop={8} style={styles.playerBtn}>
+                <Text style={[styles.playerIcon, { color: theme.text }]}>✕</Text>
+              </Pressable>
+            </View>
+          )}
+          {!narrActive && (
+            <Pressable onPress={() => stopNarration()}>
+              <Text style={{ color: theme.muted, fontSize: 12, textAlign: 'right' }}>Kapat</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -335,5 +546,10 @@ const styles = StyleSheet.create({
   sheet: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 12, maxHeight: '75%' },
   sheetTitle: { fontSize: 16, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 8 },
   fontRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 2 },
+  player: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 8, gap: 6 },
+  playerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  playerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
+  playerMain: { backgroundColor: colors.accent, width: 48, height: 48, borderRadius: 24 },
+  playerIcon: { fontSize: 20 },
   swatch: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 2 },
 });

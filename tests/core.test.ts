@@ -12,6 +12,20 @@ import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/gener
 import { sourceForUrl } from '../src/lib/sources';
 import { cleanParagraphs, htmlToParagraphs, slugify } from '../src/lib/text';
 import type { Http } from '../src/lib/types';
+import {
+  edgeDate,
+  fullVoiceName,
+  locateWords,
+  makeSsml,
+  parseBinaryFrame,
+  parseMetadata,
+  parseTextFrame,
+  secMsGecInput,
+  splitForSpeech,
+  synthesize,
+} from '../src/lib/tts/edge';
+import { mp3Duration, trimMp3 } from '../src/lib/tts/mp3';
+import { createHash, randomUUID } from 'node:crypto';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -203,6 +217,110 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+
+  await test('edge tts protocol helpers', () => {
+    assert.equal(secMsGecInput(1700000000), '133444734000000000' + '6A5AA1D4EAFF4E9FB37E23D68491D6F4');
+    assert.equal(secMsGecInput(1700000099), secMsGecInput(1700000000));
+    assert.equal(fullVoiceName('tr-TR-AhmetNeural'), 'Microsoft Server Speech Text to Speech Voice (tr-TR, AhmetNeural)');
+    assert.equal(fullVoiceName('en-US-AndrewMultilingualNeural'), 'Microsoft Server Speech Text to Speech Voice (en-US, AndrewMultilingualNeural)');
+    assert.equal(edgeDate(new Date(Date.UTC(2026, 10, 5, 7, 3, 9))), 'Thu Nov 05 2026 07:03:09 GMT+0000 (Coordinated Universal Time)');
+    const ssml = makeSsml('A & <b> "c"', { voice: 'tr-TR-EmelNeural' });
+    assert.ok(ssml.includes('A &amp; &lt;b&gt; &quot;c&quot;'));
+    assert.ok(ssml.includes("rate='+0%'"));
+    assert.deepEqual(parseTextFrame('X-RequestId:1\r\nPath:turn.end\r\n\r\n{}'), { path: 'turn.end', body: '{}' });
+    const head = 'X-RequestId:1\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n';
+    const frame = new Uint8Array([0, head.length, ...Buffer.from(head), 9, 8, 7]);
+    const b = parseBinaryFrame(frame);
+    assert.equal(b.path, 'audio');
+    assert.deepEqual([...b.audio], [9, 8, 7]);
+    const words = parseMetadata(
+      JSON.stringify({
+        Metadata: [
+          { Type: 'WordBoundary', Data: { Offset: 1000000, Duration: 4000000, text: { Text: 'Merhaba' } } },
+          { Type: 'SentenceBoundary', Data: { Offset: 0, Duration: 0 } },
+        ],
+      }),
+    );
+    assert.deepEqual(words, [{ text: 'Merhaba', start: 0.1, end: 0.5 }]);
+  });
+
+  await test('word locating and long paragraph splitting', () => {
+    const text = '“Well, I got permission,” he said. Done!';
+    const loc = locateWords(text, [
+      { text: 'Well', start: 0, end: 0.2 },
+      { text: 'I', start: 0.3, end: 0.4 },
+      { text: '???', start: 0.5, end: 0.6 },
+      { text: 'permission', start: 0.7, end: 1 },
+      { text: 'Done', start: 2, end: 2.2 },
+    ]);
+    assert.deepEqual(loc.map((w) => text.slice(w.start, w.end)), ['Well', 'I', 'permission', 'Done']);
+    const long = Array.from({ length: 80 }, (_, k) => `Cümle numarası ${k} burada bitiyor.`).join(' ');
+    const parts = splitForSpeech(long, 500);
+    assert.ok(parts.length > 3);
+    assert.equal(parts.map(([, t]) => t).join(''), long);
+    for (const [off, t] of parts) {
+      assert.ok(t.length <= 500);
+      assert.equal(long.slice(off, off + t.length), t);
+      assert.match(t.trimEnd(), /\.$/);
+    }
+    assert.deepEqual(splitForSpeech('kısa'), [[0, 'kısa']]);
+  });
+
+  await test('mp3 trimming', () => {
+    // MPEG2 layer III, 48 kbit/s, 24 kHz: 144-byte frames of 24 ms (Edge's format).
+    const frame = new Uint8Array(144);
+    frame.set([0xff, 0xf3, 0x64, 0xc4]);
+    const data = new Uint8Array(144 * 100);
+    for (let k = 0; k < 100; k++) data.set(frame, k * 144);
+    assert.ok(Math.abs(mp3Duration(data) - 2.4) < 1e-6);
+    const cut = trimMp3(data, 1.0);
+    assert.equal(cut.length % 144, 0);
+    assert.ok(Math.abs(mp3Duration(cut) - 0.984) < 1e-6);
+  });
+
+  await test('edge tts synthesis over a fake socket', async () => {
+    const sent: string[] = [];
+    let opened = '';
+    let hdrs: Record<string, string> = {};
+    const res = await synthesize('Merhaba dünya', { voice: 'tr-TR-AhmetNeural' }, {
+      sha256: async (s) => createHash('sha256').update(s).digest('hex'),
+      uuid: randomUUID,
+      openSocket: (url, headers) => {
+        opened = url;
+        hdrs = headers;
+        const ws: any = {
+          binaryType: '',
+          send: (d: string) => {
+            sent.push(d);
+            if (sent.length === 2) {
+              const head = 'Path:audio\r\n';
+              const bin = (bytes: number[]) => new Uint8Array([0, head.length, ...Buffer.from(head), ...bytes]).buffer;
+              setTimeout(() => {
+                ws.onmessage({ data: 'Path:turn.start\r\n\r\n{}' });
+                ws.onmessage({ data: bin([1, 2]) });
+                ws.onmessage({
+                  data:
+                    'Path:audio.metadata\r\n\r\n' +
+                    JSON.stringify({ Metadata: [{ Type: 'WordBoundary', Data: { Offset: 500000, Duration: 2000000, text: { Text: 'Merhaba' } } }] }),
+                });
+                ws.onmessage({ data: bin([3]) });
+                ws.onmessage({ data: 'Path:turn.end\r\n\r\n' });
+              }, 1);
+            }
+          },
+          close: () => undefined,
+        };
+        setTimeout(() => ws.onopen(), 1);
+        return ws;
+      },
+    });
+    assert.deepEqual([...res.audio], [1, 2, 3]);
+    assert.deepEqual(res.words, [{ text: 'Merhaba', start: 0.05, end: 0.25 }]);
+    assert.match(opened, /^wss:\/\/speech\.platform\.bing\.com\/.*TrustedClientToken=.*&ConnectionId=[0-9a-f]{32}&Sec-MS-GEC=[0-9A-F]{64}&Sec-MS-GEC-Version=1-/);
+    assert.equal(hdrs.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
+    assert.match(sent[0], /Path:speech\.config/);
+    assert.match(sent[1], /Path:ssml\r\n\r\n<speak .*AhmetNeural.*Merhaba dünya/);
   });
 
   console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

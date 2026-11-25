@@ -3,7 +3,7 @@
     "name": "Ebook",
     "slug": "ebook",
     "scheme": "ebook",
-    "version": "0.6.1",
+    "version": "0.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -29,7 +29,15 @@
     "plugins": [
       "expo-router",
       "expo-sharing",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "microphonePermission": false,
+          "enableBackgroundPlayback": true
+        }
+      ]
     ]
   }
 }
