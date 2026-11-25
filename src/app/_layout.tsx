@@ -1,3 +1,4 @@
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -5,11 +6,14 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { BrowserHost } from '../components/BrowserHost';
+import { FONT_FILES } from '../lib/fonts';
 import { refreshLibrary } from '../lib/library';
 import { loadSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
 
 export default function RootLayout() {
+  // Reader fonts load in the background; text uses the system font until they are ready.
+  useFonts(FONT_FILES);
   useEffect(() => {
     refreshLibrary().catch(() => undefined);
     loadSettings().catch(() => undefined);

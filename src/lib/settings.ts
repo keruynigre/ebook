@@ -2,12 +2,15 @@ import { File, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import { useSyncExternalStore } from 'react';
 
+import type { ReaderFont } from './fonts';
+
 export type ReaderTheme = 'dark' | 'sepia' | 'light';
 
 export interface ReaderSettings {
   fontSize: number;
   lineHeight: number;
   theme: ReaderTheme;
+  fontFamily: ReaderFont;
   /** Show the Turkish translation in the reader when there is one. */
   showTranslation: boolean;
   /** Translate chapters right after downloading them. */
@@ -34,6 +37,7 @@ const DEFAULTS: ReaderSettings = {
   fontSize: 18,
   lineHeight: 1.6,
   theme: 'dark',
+  fontFamily: 'system',
   showTranslation: true,
   autoTranslate: false,
   geminiModel: '',

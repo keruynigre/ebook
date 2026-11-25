@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, ProgressBar } from '../../../components/ui';
 import { startDownload, useDownload } from '../../../lib/downloads';
 import { getBook, saveProgress, useBook } from '../../../lib/library';
+import { READER_FONTS, type ReaderFont } from '../../../lib/fonts';
 import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../../../lib/settings';
 import { loadChapter, loadTranslation } from '../../../lib/storage';
 import { colors } from '../../../lib/theme';
@@ -32,6 +33,10 @@ export default function Reader() {
   const download = useDownload(id);
   const settings = useSettings();
   const theme = READER_THEMES[settings.theme];
+  const font = READER_FONTS[settings.fontFamily] ?? READER_FONTS.system;
+  const bodyFont = font.regular ? { fontFamily: font.regular } : null;
+  // Custom fonts carry their own bold file; the system font uses fontWeight.
+  const titleFont = font.bold ? { fontFamily: font.bold } : { fontWeight: '700' as const };
   const insets = useSafeAreaInsets();
 
   const scroll = useRef<ScrollViewInstance>(null);
@@ -158,7 +163,11 @@ export default function Reader() {
       />
 
       {showSettings && (
-        <View style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted }]}>
+        <ScrollView
+          style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted, maxHeight: '60%' }]}
+          contentContainerStyle={{ gap: 10 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Bölüme git</Text>
             <TextInput
@@ -178,6 +187,27 @@ export default function Reader() {
             <Button small variant="secondary" title="A−" onPress={() => changeFont(-1)} />
             <Text style={{ color: theme.text, width: 32, textAlign: 'center' }}>{settings.fontSize}</Text>
             <Button small variant="secondary" title="A+" onPress={() => changeFont(1)} />
+          </View>
+          <View style={{ gap: 6 }}>
+            <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı tipi</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {(Object.keys(READER_FONTS) as ReaderFont[]).map((f) => {
+                const item = READER_FONTS[f];
+                const active = settings.fontFamily === f;
+                return (
+                  <Pressable
+                    key={f}
+                    onPress={() => setSettings({ fontFamily: f })}
+                    style={[styles.fontChip, { borderColor: active ? colors.accent : theme.muted }]}
+                  >
+                    <Text style={[{ color: theme.text, fontSize: 15 }, item.regular ? { fontFamily: item.regular } : null]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={{ color: theme.muted, fontSize: 12 }}>{font.note}</Text>
           </View>
           <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Satır aralığı</Text>
@@ -221,7 +251,7 @@ export default function Reader() {
               </Pressable>
             ))}
           </View>
-        </View>
+        </ScrollView>
       )}
 
       <ScrollView
@@ -238,7 +268,7 @@ export default function Reader() {
         }}
         contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 16, paddingBottom: 28 + insets.bottom }}
       >
-        <Text style={{ color: theme.text, fontSize: settings.fontSize + 5, fontWeight: '700', marginBottom: 18, lineHeight: (settings.fontSize + 5) * 1.3 }}>
+        <Text style={[{ color: theme.text, fontSize: settings.fontSize + 5, marginBottom: 18, lineHeight: (settings.fontSize + 5) * 1.3 }, titleFont]}>
           {title}
         </Text>
         {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
@@ -247,6 +277,7 @@ export default function Reader() {
             key={k}
             selectable
             style={{
+              ...bodyFont,
               color: theme.text,
               fontSize: settings.fontSize,
               lineHeight: Math.round(settings.fontSize * settings.lineHeight),
@@ -315,9 +346,10 @@ export default function Reader() {
 }
 
 const styles = StyleSheet.create({
-  panel: { padding: 12, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  panel: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexGrow: 0 },
   panelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelLabel: { width: 100, fontSize: 14 },
   jumpInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 15 },
+  fontChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5 },
   swatch: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 2 },
 });
