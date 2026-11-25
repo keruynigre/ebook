@@ -2,8 +2,8 @@ import { Image } from 'expo-image';
 import type { File } from 'expo-file-system';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { memo, useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
@@ -15,27 +15,51 @@ import { coverFile } from '../../lib/storage';
 import { colors } from '../../lib/theme';
 import type { Book, ChapterRef } from '../../lib/types';
 
+const ROW_H = 48;
+
 const ChapterRow = memo(function ChapterRow({
   index,
   chapter,
   downloaded,
   translated,
+  selecting,
+  selected,
+  highlighted,
   onOpen,
+  onToggle,
 }: {
   index: number;
   chapter: ChapterRef;
   downloaded: boolean;
   translated: boolean;
+  selecting: boolean;
+  selected: boolean;
+  highlighted: boolean;
   onOpen: (i: number) => void;
+  onToggle: (i: number) => void;
 }) {
   return (
     <Pressable
-      onPress={() => downloaded && onOpen(index)}
-      style={({ pressed }) => [styles.chapter, pressed && downloaded && { opacity: 0.7 }]}
+      onPress={() => (selecting ? onToggle(index) : downloaded ? onOpen(index) : onToggle(index))}
+      onLongPress={() => onToggle(index)}
+      delayLongPress={300}
+      style={({ pressed }) => [
+        styles.chapter,
+        highlighted && { backgroundColor: '#3a2f1a' },
+        selected && { backgroundColor: '#2a2317' },
+        pressed && { opacity: 0.7 },
+      ]}
     >
-      <Text style={[styles.chapterMark, { color: downloaded ? colors.success : colors.border }]}>
-        {downloaded ? '●' : '○'}
-      </Text>
+      {selecting ? (
+        <Text style={[styles.chapterMark, { color: selected ? colors.accent : colors.muted, fontSize: 16 }]}>
+          {selected ? '☑' : '☐'}
+        </Text>
+      ) : (
+        <Text style={[styles.chapterMark, { color: downloaded ? colors.success : colors.border }]}>
+          {downloaded ? '●' : '○'}
+        </Text>
+      )}
+      <Text style={styles.chapterNo}>{index + 1}</Text>
       <Text style={[ui.text, { flex: 1, color: downloaded ? colors.text : colors.muted }]} numberOfLines={1}>
         {chapter.title}
       </Text>
@@ -68,6 +92,21 @@ export default function BookScreen() {
   const [exported, setExported] = useState<{ file: File; count: number; missing: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState('');
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [jumpText, setJumpText] = useState('');
+  const [highlight, setHighlight] = useState<number | null>(null);
+  const listRef = useRef<FlatList<ChapterRef>>(null);
+  const headerHeight = useRef(0);
+  const selecting = selected.size > 0;
+
+  const toggle = useCallback((i: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }, []);
 
   const downloaded = useMemo(() => new Set(book?.downloaded ?? []), [book?.downloaded]);
   const translatedSet = useMemo(() => new Set(book?.translated ?? []), [book?.translated]);
@@ -108,16 +147,38 @@ export default function BookScreen() {
     startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('İndirme hatası', (e as Error).message));
   };
 
+  const needsKey = () => {
+    if (settings.hasGeminiKey && settings.geminiModel) return false;
+    Alert.alert('Gemini anahtarı gerekli', 'Çeviri için önce Ayarlar’dan Gemini API anahtarınızı girin.', [
+      { text: 'Vazgeç', style: 'cancel' },
+      { text: 'Ayarlara git', onPress: () => router.push('/settings') },
+    ]);
+    return true;
+  };
+
   const onTranslate = () => {
-    if (!settings.hasGeminiKey || !settings.geminiModel) {
-      Alert.alert('Gemini anahtarı gerekli', 'Çeviri için önce Ayarlar’dan Gemini API anahtarınızı girin.', [
-        { text: 'Vazgeç', style: 'cancel' },
-        { text: 'Ayarlara git', onPress: () => router.push('/settings') },
-      ]);
-      return;
-    }
+    if (needsKey()) return;
     const r = parseRange();
     if (r) doDownload(r[0], r[1], true);
+  };
+
+  const runSelected = (translate: boolean) => {
+    if (translate && needsKey()) return;
+    const indexes = [...selected].sort((a, b) => a - b);
+    setSelected(new Set());
+    setExported(null);
+    startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('Hata', (e as Error).message));
+  };
+
+  const jumpTo = () => {
+    const n = parseInt(jumpText, 10);
+    if (!Number.isFinite(n) || n < 1 || n > total) {
+      Alert.alert('Bölüm numarası hatalı', `1 ile ${total} arasında bir sayı girin.`);
+      return;
+    }
+    Keyboard.dismiss();
+    setHighlight(n - 1);
+    listRef.current?.scrollToIndex({ index: n - 1, viewPosition: 0.3, animated: true });
   };
 
   const onDownload = () => {
@@ -236,7 +297,7 @@ export default function BookScreen() {
   const readIndex = saved ?? (book.downloaded.length ? Math.min(...book.downloaded) : null);
 
   const header = (
-    <View style={{ gap: 14, marginBottom: 12 }}>
+    <View style={{ gap: 14, marginBottom: 12 }} onLayout={(e) => (headerHeight.current = e.nativeEvent.layout.height)}>
       <View style={{ flexDirection: 'row', gap: 14 }}>
         {cover && <Image source={{ uri: cover.uri }} style={styles.cover} contentFit="cover" />}
         <View style={{ flex: 1, gap: 4 }}>
@@ -337,7 +398,23 @@ export default function BookScreen() {
         <Button small variant="danger" title="Sil" onPress={remove} disabled={running} />
       </View>
       <Text style={[ui.h2, { marginTop: 8, marginBottom: 0 }]}>Bölümler</Text>
-      <Text style={ui.muted}>İndirilen bölümlere dokunarak okuyabilirsiniz.</Text>
+      <View style={ui.row}>
+        <TextInput
+          value={jumpText}
+          onChangeText={setJumpText}
+          placeholder={`Bölüme git (1–${total})`}
+          placeholderTextColor={colors.muted}
+          keyboardType="number-pad"
+          returnKeyType="go"
+          onSubmitEditing={jumpTo}
+          style={[ui.input, { flex: 1 }]}
+        />
+        <Button title="Git" onPress={jumpTo} disabled={!jumpText.trim()} />
+      </View>
+      <Text style={ui.muted}>
+        İndirilen bölüme dokunarak okuyun. Bir bölüme uzun basarak seçim yapın; seçtiklerinizi Türkçeye çevirebilir ya da
+        indirebilirsiniz.
+      </Text>
     </View>
   );
 
@@ -345,17 +422,48 @@ export default function BookScreen() {
     <View style={ui.screen}>
       <Stack.Screen options={{ title: book.title }} />
       <FlatList
+        ref={listRef}
         data={book.chapters}
         keyExtractor={(c, i) => `${i}:${c.url}`}
         renderItem={({ item, index }) => (
-          <ChapterRow index={index} chapter={item} downloaded={downloaded.has(index)} translated={translatedSet.has(index)} onOpen={openChapter} />
+          <ChapterRow
+            index={index}
+            chapter={item}
+            downloaded={downloaded.has(index)}
+            translated={translatedSet.has(index)}
+            selecting={selecting}
+            selected={selected.has(index)}
+            highlighted={highlight === index}
+            onOpen={openChapter}
+            onToggle={toggle}
+          />
         )}
+        extraData={[selected, highlight]}
+        getItemLayout={(_data, index) => ({ length: ROW_H, offset: 16 + headerHeight.current + 12 + ROW_H * index, index })}
+        onScrollToIndexFailed={(info) =>
+          listRef.current?.scrollToOffset({ offset: 16 + headerHeight.current + 12 + ROW_H * info.index, animated: true })
+        }
         ListHeaderComponent={header}
-        contentContainerStyle={{ padding: 16, paddingBottom: 16 + insets.bottom }}
+        contentContainerStyle={{ padding: 16, paddingBottom: (selecting ? 110 : 16) + insets.bottom }}
         initialNumToRender={30}
         windowSize={10}
         keyboardShouldPersistTaps="handled"
       />
+      {selecting && (
+        <View style={[styles.selectBar, { paddingBottom: 12 + insets.bottom }]}>
+          <View style={[ui.row, { justifyContent: 'space-between' }]}>
+            <Text style={ui.text}>{selected.size} bölüm seçildi</Text>
+            <Pressable onPress={() => setSelected(new Set())} hitSlop={10}>
+              <Text style={{ color: colors.muted, fontWeight: '600' }}>Seçimi kaldır</Text>
+            </Pressable>
+          </View>
+          <View style={ui.row}>
+            <Button title="Türkçeye çevir" onPress={() => runSelected(true)} disabled={running} style={{ flex: 1 }} />
+            <Button title="İndir" variant="secondary" onPress={() => runSelected(false)} disabled={running} style={{ flex: 1 }} />
+          </View>
+          {running && <Text style={ui.muted}>Önceki işlem bitince seçilenleri başlatabilirsiniz.</Text>}
+        </View>
+      )}
     </View>
   );
 }
@@ -366,10 +474,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 10,
+    height: ROW_H,
+    paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  chapterMark: { fontSize: 12, width: 14, textAlign: 'center' },
+  chapterMark: { fontSize: 12, width: 18, textAlign: 'center' },
+  chapterNo: { color: colors.muted, fontSize: 12, minWidth: 34, textAlign: 'right' },
+  selectBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    gap: 10,
+    padding: 12,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderColor: colors.accent,
+  },
   trBadge: { color: colors.accent, fontSize: 11, fontWeight: '800', borderWidth: 1, borderColor: colors.accent, borderRadius: 4, paddingHorizontal: 4 },
 });

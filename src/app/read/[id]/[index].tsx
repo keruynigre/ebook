@@ -1,10 +1,13 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -34,6 +37,7 @@ export default function Reader() {
   const scroll = useRef<ScrollViewInstance>(null);
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
+  const [jumpText, setJumpText] = useState('');
   const [translation, setTranslation] = useState<ChapterContent | null>(null);
   const isTranslated = !!book?.translated?.includes(i);
 
@@ -111,6 +115,29 @@ export default function Reader() {
     );
   };
 
+  const jump = () => {
+    const n = parseInt(jumpText, 10);
+    if (!Number.isFinite(n) || n < 1 || n > total) {
+      Alert.alert('Bölüm numarası hatalı', `1 ile ${total} arasında bir sayı girin.`);
+      return;
+    }
+    Keyboard.dismiss();
+    setJumpText('');
+    const k = n - 1;
+    if (has(k)) {
+      setShowSettings(false);
+      go(k);
+      return;
+    }
+    Alert.alert(`${n}. bölüm indirilmemiş`, 'Şimdi indirilsin mi? İnince bu bölüme gidebilirsiniz.', [
+      { text: 'Vazgeç', style: 'cancel' },
+      {
+        text: 'İndir',
+        onPress: () => startDownload(id, [k], { translate: settings.autoTranslate }).catch(() => undefined),
+      },
+    ]);
+  };
+
   const changeFont = (delta: number) =>
     setSettings({ fontSize: Math.min(30, Math.max(13, settings.fontSize + delta)) });
 
@@ -132,6 +159,20 @@ export default function Reader() {
 
       {showSettings && (
         <View style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted }]}>
+          <View style={styles.panelRow}>
+            <Text style={[styles.panelLabel, { color: theme.text }]}>Bölüme git</Text>
+            <TextInput
+              value={jumpText}
+              onChangeText={setJumpText}
+              placeholder={`1–${total}`}
+              placeholderTextColor={theme.muted}
+              keyboardType="number-pad"
+              returnKeyType="go"
+              onSubmitEditing={jump}
+              style={[styles.jumpInput, { color: theme.text, borderColor: theme.muted }]}
+            />
+            <Button small title="Git" onPress={jump} disabled={!jumpText.trim()} />
+          </View>
           <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı boyutu</Text>
             <Button small variant="secondary" title="A−" onPress={() => changeFont(-1)} />
@@ -228,7 +269,7 @@ export default function Reader() {
           </View>
         )}
 
-        {chapter && settings.showTranslation && !isTranslated && (
+        {chapter && !isTranslated && (
           <View style={{ gap: 6, marginTop: 4, marginBottom: 8 }}>
             {settings.hasGeminiKey ? (
               <Button
@@ -277,5 +318,6 @@ const styles = StyleSheet.create({
   panel: { padding: 12, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   panelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelLabel: { width: 100, fontSize: 14 },
+  jumpInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 15 },
   swatch: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 2 },
 });
