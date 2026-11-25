@@ -99,16 +99,35 @@ export interface TranslationResult {
   newTerms: GlossaryEntry[];
 }
 
-const SYSTEM = `Sen deneyimli bir edebi çevirmensin. Web romanlarını İngilizceden (veya verilen dilden) akıcı, doğal ve edebi bir Türkçeye çeviriyorsun.
+/** The person's translation instructions (editable in Settings). */
+export const DEFAULT_TRANSLATION_PROMPT = `Sen; akademik, teknik ve edebi metinler konusunda uzmanlaşmış, yüksek düzeyde dil yetkinliğine sahip profesyonel bir mütercim-tercümansın. Görevin, sana iletilen her türlü metni veya dosyayı en yüksek doğrulukla Türkçeye çevirmektir.
 
-Kurallar:
-- Anlamı ve üslubu koru; birebir değil, Türk okurun doğal bulacağı şekilde çevir.
-- Karakter, yer ve tarikat adlarını çevirme; olduğu gibi bırak (ör. "Lin Feng").
-- Sözlükte verilen terimleri her zaman sözlükteki karşılığıyla kullan.
-- Diyalogları Türkçe yazım kurallarına uygun yaz; konuşmaları tırnak içinde tut.
+Çeviri Prensipleri:
+Tam Metin Sadakati: En temel kuralın "sıfır kayıp" ilkesidir. Metnin hiçbir bölümünü atlamayacak, özetlemeyecek veya "burası benzer" diyerek geçiştirmeyeceksin. Başlıklardan dipnotlara kadar metnin TAMAMINI çevireceksin. Çevirmediğin tek bir cümle dahi kalmayacak.
+
+Terminoloji Hassasiyeti:
+Metnin ait olduğu disiplini (hukuk, felsefe, ilahiyat, teknoloji vb.) analiz et ve o alana ait yerleşik terminolojiyi kullan. Eğer bir terimin birden fazla anlamı varsa, bağlama en uygun olanı seç.
+
+Akıcılık ve Doğallık:
+Çeviri yaparken Türkçe'nin söz dizimine, deyim yapısına ve ifade gücüne uygun, akıcı ve profesyonel bir üslup kullan.
+
+Format Koruma:
+Orijinal metindeki madde işaretleri, kalın/italik yazımlar veya tablo yapılarını aynen koru.
+
+Operasyonel Kurallar:
+Anlamı belirsiz veya birden fazla şekilde yorumlanabilecek ifadeler olursa, en makul çeviriyi yap ama parantez içinde veya çeviri sonunda kısa bir "Not" olarak alternatifini belirt.
+
+Dipnotlar Hakkında:
+Eğer verilen metinde dipnotlar varsa onların da tamamı tercüme edilecek. Hiçbir dipnot atlanmayacak. Dipnot numaraları birebir korunacak.`;
+
+/** Rules the app needs to read the answer; always added after the person's instructions. */
+const APP_RULES = `Uygulama kuralları (yanıtın okunabilmesi için zorunlu):
+- Metin bir romanın bölümüdür ve JSON olarak verilir: "title" (bölüm başlığı) ve "paragraphs" (paragraflar).
 - Her paragrafı ayrı çevir; paragraf sayısı ve sırası aynı kalsın. "***" gibi ayraçları aynen bırak.
-- Açıklama, not veya özet ekleme; sansürleme, kısaltma.
-- Ayrıca bu bölümde ilk kez geçen ve tutarlı çevrilmesi gereken özel terimleri (unvanlar, teknik adları, seviye adları, eşya adları) "newTerms" listesine ekle. Kişi adlarını ekleme.`;
+- Karakter ve yer adlarını kitap boyunca aynı yaz; sözlükte verilen terimleri her zaman sözlükteki karşılığıyla kullan.
+- Çeviri sonuna eklenecek notları paragrafların içine değil "notes" listesine yaz (her not kısa bir cümle). Not yoksa boş liste ver.
+- Bu bölümde ilk kez geçen ve tutarlı çevrilmesi gereken özel terimleri (unvanlar, teknik adları, seviye adları, eşya adları) "newTerms" listesine ekle. Kişi adlarını ekleme.
+- Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Translates one chapter to Turkish. `glossary` keeps terms consistent across chapters. */
 export async function translateChapter(
@@ -117,6 +136,7 @@ export async function translateChapter(
   chapter: ChapterContent,
   glossary: GlossaryEntry[],
   bookTitle: string,
+  instructions: string = DEFAULT_TRANSLATION_PROMPT,
 ): Promise<TranslationResult> {
   const glossaryText = glossary.length
     ? glossary
@@ -133,12 +153,12 @@ export async function translateChapter(
 Sözlük (kaynak => Türkçe):
 ${glossaryText}
 
-Aşağıdaki JSON'daki bölüm başlığını ve paragrafları Türkçeye çevir. Yanıtı yalnızca istenen JSON biçiminde ver.
+Aşağıdaki JSON'daki bölüm başlığını ve paragrafların tamamını Türkçeye çevir.
 
 ${JSON.stringify(input)}`;
 
   const body = {
-    systemInstruction: { parts: [{ text: SYSTEM }] },
+    systemInstruction: { parts: [{ text: `${instructions.trim() || DEFAULT_TRANSLATION_PROMPT}\n\n${APP_RULES}` }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.4,
@@ -148,6 +168,7 @@ ${JSON.stringify(input)}`;
         properties: {
           title: { type: 'STRING' },
           paragraphs: { type: 'ARRAY', items: { type: 'STRING' } },
+          notes: { type: 'ARRAY', items: { type: 'STRING' } },
           newTerms: {
             type: 'ARRAY',
             items: {
@@ -199,8 +220,12 @@ export function parseTranslation(text: string, original: ChapterContent, finishR
         .filter((t: any) => typeof t?.source === 'string' && typeof t?.target === 'string' && t.source.trim() && t.target.trim())
         .map((t: any) => ({ source: t.source.trim(), target: t.target.trim() }))
     : [];
+  const notes: string[] = Array.isArray(data?.notes)
+    ? data.notes.filter((n: unknown) => typeof n === 'string' && n.trim()).map((n: string) => n.trim())
+    : [];
+  const title = typeof data?.title === 'string' && data.title.trim() ? data.title.trim() : original.title;
   return {
-    chapter: { title: typeof data?.title === 'string' && data.title.trim() ? data.title.trim() : original.title, paragraphs },
+    chapter: notes.length ? { title, paragraphs, notes } : { title, paragraphs },
     newTerms,
   };
 }

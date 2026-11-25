@@ -217,6 +217,17 @@ export default function Reader() {
           </Text>
         ))}
 
+        {!!shown?.notes?.length && (
+          <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.muted, gap: 6 }}>
+            <Text style={{ color: theme.muted, fontWeight: '700', fontSize: Math.max(13, settings.fontSize - 4) }}>Çevirmen notları</Text>
+            {shown.notes.map((n, k) => (
+              <Text key={k} selectable style={{ color: theme.muted, fontSize: Math.max(13, settings.fontSize - 4), lineHeight: Math.max(13, settings.fontSize - 4) * 1.45 }}>
+                {n}
+              </Text>
+            ))}
+          </View>
+        )}
+
         {chapter && settings.showTranslation && !isTranslated && (
           <View style={{ gap: 6, marginTop: 4, marginBottom: 8 }}>
             {settings.hasGeminiKey ? (

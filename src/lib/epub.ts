@@ -60,6 +60,8 @@ p.sep { text-align: center; }
 .small { font-size: 0.8em; color: #666; text-align: center; margin-top: 3em; }
 .cover { margin: 0; padding: 0; text-align: center; }
 .cover img { max-width: 100%; max-height: 100%; }
+aside.notes { margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #999; font-size: 0.85em; }
+p.notes-title { font-weight: bold; }
 `;
 
 function xhtml(title: string, lang: string, body: string, extraHead = ''): string {
@@ -81,6 +83,11 @@ ${body}
 function paragraphHtml(p: string): string {
   if (/^[*\s~=\-–—•·]{3,}$/.test(p)) return '<p class="sep">* * *</p>';
   return `<p>${escapeXml(p)}</p>`;
+}
+
+function notesHtml(notes?: string[]): string {
+  if (!notes?.length) return '';
+  return `<aside class="notes"><p class="notes-title">Çevirmen notları</p>\n${notes.map((n) => `<p>${escapeXml(n)}</p>`).join('\n')}\n</aside>\n`;
 }
 
 export interface BuildEpubOptions {
@@ -158,7 +165,11 @@ ${meta.sourceUrl ? `<p class="small">Kaynak: ${escapeXml(meta.sourceUrl)}</p>` :
     const title = ch.title || `Bölüm ${i + 1}`;
     zip.file(
       `OEBPS/${href}`,
-      xhtml(title, lang, `<section epub:type="chapter">\n<h2>${escapeXml(title)}</h2>\n${ch.paragraphs.map(paragraphHtml).join('\n')}\n</section>`),
+      xhtml(
+        title,
+        lang,
+        `<section epub:type="chapter">\n<h2>${escapeXml(title)}</h2>\n${ch.paragraphs.map(paragraphHtml).join('\n')}\n${notesHtml(ch.notes)}</section>`,
+      ),
     );
     manifest.push(`<item id="${id}" href="${href}" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);

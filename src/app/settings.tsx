@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { Button, Card, ui } from '../components/ui';
-import { listModels, type GeminiModel } from '../lib/gemini';
+import { DEFAULT_TRANSLATION_PROMPT, listModels, type GeminiModel } from '../lib/gemini';
 import { getGeminiKey, setGeminiKey, setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
 
@@ -15,6 +15,9 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
+  const [prompt, setPrompt] = useState(settings.translationPrompt || DEFAULT_TRANSLATION_PROMPT);
+  const promptChanged = prompt.trim() !== (settings.translationPrompt || DEFAULT_TRANSLATION_PROMPT).trim();
+  const isDefaultPrompt = !settings.translationPrompt || settings.translationPrompt.trim() === DEFAULT_TRANSLATION_PROMPT.trim();
 
   const loadModels = async (key: string) => {
     setBusy(true);
@@ -136,6 +139,44 @@ export default function SettingsScreen() {
           })}
         </Card>
       )}
+
+      <Card style={{ gap: 10 }}>
+        <Text style={ui.h2}>Çeviri talimatı</Text>
+        <Text style={ui.muted}>
+          Gemini her bölümü bu talimata göre çevirir. Uygulamanın yanıtı okuyabilmesi için gereken teknik kurallar
+          (paragraf düzeni, terim sözlüğü, notların ayrı listede verilmesi) otomatik olarak eklenir. Notlar bölüm sonunda
+          “Çevirmen notları” olarak gösterilir.
+        </Text>
+        <TextInput
+          value={prompt}
+          onChangeText={setPrompt}
+          multiline
+          textAlignVertical="top"
+          style={[ui.input, { minHeight: 220, fontSize: 13, lineHeight: 18 }]}
+        />
+        <View style={ui.row}>
+          <Button
+            title="Talimatı kaydet"
+            onPress={() => {
+              const t = prompt.trim();
+              setSettings({ translationPrompt: t === DEFAULT_TRANSLATION_PROMPT.trim() ? '' : t });
+              setNote('Çeviri talimatı kaydedildi. Yeni çevrilen bölümlerde kullanılacak.');
+            }}
+            disabled={!promptChanged || !prompt.trim()}
+            style={{ flex: 1 }}
+          />
+          {!isDefaultPrompt && (
+            <Button
+              title="Varsayılana dön"
+              variant="secondary"
+              onPress={() => {
+                setPrompt(DEFAULT_TRANSLATION_PROMPT);
+                setSettings({ translationPrompt: '' });
+              }}
+            />
+          )}
+        </View>
+      </Card>
 
       <Card style={{ gap: 12 }}>
         <View style={[ui.row, { justifyContent: 'space-between' }]}>

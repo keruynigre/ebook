@@ -124,7 +124,7 @@ export async function startDownload(bookId: string, indexes: number[], options: 
       if (wait > 0) await sleep(wait);
       lastGemini = Date.now();
       try {
-        const r = await translateChapter(key!, settings.geminiModel, content, glossary, book.title);
+        const r = await translateChapter(key!, settings.geminiModel, content, glossary, book.title, settings.translationPrompt);
         await saveTranslation(bookId, index, r.chapter);
         if (r.newTerms.length) {
           glossary = mergeGlossary(glossary, r.newTerms);

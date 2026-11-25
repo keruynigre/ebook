@@ -14,6 +14,8 @@ export interface ReaderSettings {
   autoTranslate: boolean;
   /** Gemini model name, e.g. "models/gemini-…-flash". */
   geminiModel: string;
+  /** Custom translation instructions; empty means the built-in default. */
+  translationPrompt: string;
   /** Whether a Gemini key is saved (the key itself lives in secure storage). */
   hasGeminiKey: boolean;
 }
@@ -31,6 +33,7 @@ const DEFAULTS: ReaderSettings = {
   showTranslation: true,
   autoTranslate: false,
   geminiModel: '',
+  translationPrompt: '',
   hasGeminiKey: false,
 };
 

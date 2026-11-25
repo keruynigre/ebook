@@ -32,7 +32,7 @@ Yeni sürümler eskisinin üstüne kurulur; kitaplığınız silinmez.
 2. Uygulamada **Ayarlar** → anahtarı yapıştırın → **Kaydet** → bir model seçin ("Flash" önerilir).
 3. Kitap sayfasında aralık seçip **Türkçeye çevir**'e basın ya da Ayarlar'dan **İndirirken otomatik çevir**'i açın.
 
-Karakter adları çevrilmez. Unvanlar ve teknik adlar gibi terimler için her kitaba bir sözlük tutulur; böylece aynı terim kitap boyunca aynı karşılıkla çevrilir. Okurken **Aa** → **Dil** ile Türkçe ve orijinal arasında geçebilirsiniz. EPUB oluştururken dil sorulur.
+Çeviri, Ayarlar → **Çeviri talimatı** bölümündeki talimatla yapılır (varsayılan: tam metin sadakati ilkesine bağlı profesyonel mütercim-tercüman talimatı); talimatı oradan değiştirebilirsiniz. Belirsiz ifadeler için alternatifler bölüm sonunda "Çevirmen notları" olarak gösterilir. Unvanlar ve teknik adlar gibi terimler için her kitaba bir sözlük tutulur; böylece aynı terim kitap boyunca aynı karşılıkla çevrilir. Okurken **Aa** → **Dil** ile Türkçe ve orijinal arasında geçebilirsiniz. EPUB oluştururken dil sorulur.
 
 Ücretsiz katmanın günlük bir sınırı vardır. Sınır dolunca çeviri durur, indirme devam eder; ertesi gün **Türkçeye çevir** ile kalınan yerden sürdürülür. Anahtar telefonda şifreli saklanır ve yalnızca Google'a gönderilir.
 

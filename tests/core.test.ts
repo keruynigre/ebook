@@ -118,7 +118,7 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     const bytes = await buildEpub({
       meta: { id: 'abc', title: 'Test & <Novel>', author: 'Jane', description: 'Line 1\nLine 2', language: 'en', sourceUrl: 'https://novelfull.com/x.html?a=1&b=2' },
       chapters: [
-        { title: 'Chapter 1', paragraphs: ['Hello "world" & <friends>', '***'] },
+        { title: 'Chapter 1', paragraphs: ['Hello "world" & <friends>', '***'], notes: ['Not: <alt> & x'] },
         { title: '', paragraphs: ['Second'] },
       ],
       cover: { bytes: jpeg, mediaType: 'image/jpeg', ext: 'jpg' },
@@ -134,6 +134,8 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     }
     const ch2 = await zip.file('OEBPS/text/ch0002.xhtml')!.async('string');
     assert.match(ch2, /<h2>Bölüm 2<\/h2>/);
+    const ch1 = await zip.file('OEBPS/text/ch0001.xhtml')!.async('string');
+    assert.match(ch1, /Çevirmen notları[\s\S]*Not: &lt;alt&gt; &amp; x/);
     const out = join(__dirname, 'out');
     require('node:fs').mkdirSync(out, { recursive: true });
     writeFileSync(join(out, 'test.epub'), bytes);
@@ -148,6 +150,9 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(r.chapter.title, 'Bölüm 1');
     assert.deepEqual(r.chapter.paragraphs, ['x', 'y', 'z']);
     assert.deepEqual(r.newTerms, [{ source: 'Qi', target: 'Çi' }]);
+    const withNotes = parseTranslation('{"title":"B","paragraphs":["x","y","z"],"notes":["Not: alternatif",""]}', orig);
+    assert.deepEqual(withNotes.chapter.notes, ['Not: alternatif']);
+    assert.equal(r.chapter.notes, undefined);
     assert.throws(() => parseTranslation('{"title":"t","paragraphs":["x"]}', orig), /eksik/);
     assert.throws(() => parseTranslation('not json', orig));
     const g = mergeGlossary([{ source: 'Qi', target: 'Çi' }], [{ source: 'qi', target: 'Ki' }, { source: 'Dao', target: 'Dao' }]);

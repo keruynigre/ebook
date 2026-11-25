@@ -21,6 +21,8 @@ export interface NovelInfo {
 export interface ChapterContent {
   title: string;
   paragraphs: string[];
+  /** Translator's notes shown after the chapter (alternatives for ambiguous phrases). */
+  notes?: string[];
 }
 
 /** A novel saved in the library. */
