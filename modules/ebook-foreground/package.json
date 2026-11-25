@@ -1,0 +1,6 @@
+{
+  "name": "ebook-foreground",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Keeps chapter downloads running in the background with an Android foreground service."
+}

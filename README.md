@@ -24,7 +24,7 @@ Yeni sürümler eskisinin üstüne kurulur; kitaplığınız silinmez.
 4. **Okumaya başla** ile kitabı uygulama içinde okuyun. Kaldığınız yer, yazı boyutu ve tema (Aa) hatırlanır.
 5. İsterseniz **EPUB oluştur** → **Paylaş** (okuma uygulamanızı seçin), **Aç** ya da **Klasöre kaydet**.
 
-İndirilen bölümler telefonda saklanır. İndirme yarıda kalırsa tekrar **İndir**'e basın; zaten indirilmiş bölümler atlanır.
+İndirme sürerken bildirim çubuğunda ilerleme görünür; uygulamayı aşağı indirseniz ya da ekranı kapatsanız da indirme devam eder. İndirilen bölümler telefonda saklanır. İndirme yarıda kalırsa tekrar **İndir**'e basın; zaten indirilmiş bölümler atlanır.
 
 ### Desteklenen siteler
 
@@ -51,6 +51,7 @@ npx expo start        # geliştirme sunucusu
 - `src/lib/epub.ts`: EPUB 3 oluşturucu
 - `src/lib/downloads.ts`: bölüm indirme kuyruğu
 - `src/components/BrowserHost.tsx`: site doğrulamalarını geçen gizli WebView
+- `modules/ebook-foreground/`: indirmeyi arka planda sürdüren Android ön plan hizmeti (Kotlin)
 
 `main` dalına yapılan her gönderimde GitHub Actions APK'yı derler ve **Releases** sayfasında yayınlar (`.github/workflows/android.yml`).
 

@@ -1,6 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useSyncExternalStore } from 'react';
 
+import { startForeground, stopForeground, updateForeground } from './foreground';
 import { http } from './http';
 import { getBook, putBook } from './library';
 import { sourceById } from './sources';
@@ -70,6 +71,8 @@ export async function startDownload(bookId: string, indexes: number[]): Promise<
   const source = sourceById(book.sourceId);
   const tag = `download-${bookId}`;
   await activateKeepAwakeAsync(tag).catch(() => undefined);
+  // Keeps the download alive while the app is in the background or the screen is off.
+  await startForeground(book.title, `0 / ${todo.length} bölüm`).catch(() => undefined);
   let consecutive = 0;
 
   const persist = async () => {
@@ -89,6 +92,7 @@ export async function startDownload(bookId: string, indexes: number[]): Promise<
       const ref = book.chapters[index];
       state.current = ref.title;
       set(bookId, { ...state });
+      updateForeground(book.title, `${n + 1} / ${todo.length}: ${ref.title}`, n, todo.length);
 
       let ok = false;
       let lastError = '';
@@ -121,7 +125,8 @@ export async function startDownload(bookId: string, indexes: number[]): Promise<
     }
   } finally {
     await persist().catch(() => undefined);
-    deactivateKeepAwake(tag);
+    deactivateKeepAwake(tag).catch(() => undefined);
+    stopForeground();
     set(bookId, { ...state, running: false, current: undefined, finishedAt: Date.now() });
   }
 }
