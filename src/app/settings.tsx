@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
-import { Button, Card, ui } from '../components/ui';
+import { Button, Card, ProgressBar, ui } from '../components/ui';
+import { createBackup, restoreBackup, type BackupProgress } from '../lib/backup';
 import { DEFAULT_TRANSLATION_PROMPT, listModels, type GeminiModel } from '../lib/gemini';
 import { getGeminiKey, setGeminiKey, setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
@@ -15,6 +16,34 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null);
+  const [backupNote, setBackupNote] = useState('');
+
+  const runBackup = async (kind: 'backup' | 'restore') => {
+    setBackupBusy(true);
+    setBackupNote('');
+    setBackupProgress(null);
+    try {
+      const res = kind === 'backup' ? await createBackup(setBackupProgress) : await restoreBackup(setBackupProgress);
+      if (res) setBackupNote(res);
+    } catch (e) {
+      const msg = (e as Error).message ?? '';
+      if (!/cancel|iptal/i.test(msg)) Alert.alert(kind === 'backup' ? 'Yedeklenemedi' : 'Geri yüklenemedi', msg);
+    } finally {
+      setBackupBusy(false);
+      setBackupProgress(null);
+    }
+  };
+  const askRestore = () =>
+    Alert.alert(
+      'Yedekten geri yükle',
+      'Yedekteki kitaplar telefona yazılır; aynı kitap telefonda varsa yedekteki hâli onun yerine geçer. Diğer kitaplar korunur.',
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        { text: 'Yedek dosyasını seç', onPress: () => runBackup('restore') },
+      ],
+    );
   const [prompt, setPrompt] = useState(settings.translationPrompt || DEFAULT_TRANSLATION_PROMPT);
   const promptChanged = prompt.trim() !== (settings.translationPrompt || DEFAULT_TRANSLATION_PROMPT).trim();
   const isDefaultPrompt = !settings.translationPrompt || settings.translationPrompt.trim() === DEFAULT_TRANSLATION_PROMPT.trim();
@@ -225,6 +254,26 @@ export default function SettingsScreen() {
             trackColor={{ true: colors.accent }}
           />
         </View>
+      </Card>
+
+      <Card style={{ gap: 10 }}>
+        <Text style={ui.h2}>Yedekleme</Text>
+        <Text style={ui.muted}>
+          Bütün kitaplar (bölümler, çeviriler, kaldığın yerler, terim sözlükleri) ve ayarlar tek bir .zip dosyasına
+          yazılır. İndirilenler gibi bir klasör seçin; telefon değiştirince ya da uygulamayı yeniden kurunca bu dosyadan
+          geri yükleyebilirsiniz. Gemini anahtarı güvenlik için yedeğe girmez.
+        </Text>
+        <View style={ui.row}>
+          <Button title="Yedekle" onPress={() => runBackup('backup')} busy={backupBusy} disabled={backupBusy} style={{ flex: 1 }} />
+          <Button title="Geri yükle" variant="secondary" onPress={askRestore} disabled={backupBusy} style={{ flex: 1 }} />
+        </View>
+        {backupProgress && (
+          <View style={{ gap: 6 }}>
+            {backupProgress.value !== undefined && <ProgressBar value={backupProgress.value} />}
+            <Text style={ui.muted}>{backupProgress.message}</Text>
+          </View>
+        )}
+        {!!backupNote && <Text style={ui.text}>{backupNote}</Text>}
       </Card>
 
       <Text style={[ui.muted, { paddingHorizontal: 4 }]}>
