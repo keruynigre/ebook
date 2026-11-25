@@ -29,18 +29,20 @@ class EbookForegroundModule : Module() {
     }
 
     Function("update") { title: String, text: String, progress: Int, max: Int ->
-      val ctx = context ?: return@Function
+      val ctx = context ?: return@Function Unit
       val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
       try {
         nm.notify(DownloadService.NOTIFICATION_ID, DownloadService.buildNotification(ctx, title, text, progress, max))
       } catch (e: Exception) {
         // Notifications may be turned off; the service keeps running regardless.
       }
+      Unit
     }
 
     Function("stop") {
-      val ctx = context ?: return@Function
+      val ctx = context ?: return@Function Unit
       ctx.stopService(Intent(ctx, DownloadService::class.java))
+      Unit
     }
   }
 }
