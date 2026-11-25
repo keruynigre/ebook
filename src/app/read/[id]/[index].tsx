@@ -1,13 +1,11 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  Modal,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -42,7 +40,7 @@ export default function Reader() {
   const scroll = useRef<ScrollViewInstance>(null);
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
-  const [jumpText, setJumpText] = useState('');
+  const [showFonts, setShowFonts] = useState(false);
   const [translation, setTranslation] = useState<ChapterContent | null>(null);
   const isTranslated = !!book?.translated?.includes(i);
 
@@ -120,29 +118,6 @@ export default function Reader() {
     );
   };
 
-  const jump = () => {
-    const n = parseInt(jumpText, 10);
-    if (!Number.isFinite(n) || n < 1 || n > total) {
-      Alert.alert('Bölüm numarası hatalı', `1 ile ${total} arasında bir sayı girin.`);
-      return;
-    }
-    Keyboard.dismiss();
-    setJumpText('');
-    const k = n - 1;
-    if (has(k)) {
-      setShowSettings(false);
-      go(k);
-      return;
-    }
-    Alert.alert(`${n}. bölüm indirilmemiş`, 'Şimdi indirilsin mi? İnince bu bölüme gidebilirsiniz.', [
-      { text: 'Vazgeç', style: 'cancel' },
-      {
-        text: 'İndir',
-        onPress: () => startDownload(id, [k], { translate: settings.autoTranslate }).catch(() => undefined),
-      },
-    ]);
-  };
-
   const changeFont = (delta: number) =>
     setSettings({ fontSize: Math.min(30, Math.max(13, settings.fontSize + delta)) });
 
@@ -169,45 +144,22 @@ export default function Reader() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Bölüme git</Text>
-            <TextInput
-              value={jumpText}
-              onChangeText={setJumpText}
-              placeholder={`1–${total}`}
-              placeholderTextColor={theme.muted}
-              keyboardType="number-pad"
-              returnKeyType="go"
-              onSubmitEditing={jump}
-              style={[styles.jumpInput, { color: theme.text, borderColor: theme.muted }]}
-            />
-            <Button small title="Git" onPress={jump} disabled={!jumpText.trim()} />
-          </View>
-          <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı boyutu</Text>
             <Button small variant="secondary" title="A−" onPress={() => changeFont(-1)} />
             <Text style={{ color: theme.text, width: 32, textAlign: 'center' }}>{settings.fontSize}</Text>
             <Button small variant="secondary" title="A+" onPress={() => changeFont(1)} />
           </View>
-          <View style={{ gap: 6 }}>
+          <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı tipi</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {(Object.keys(READER_FONTS) as ReaderFont[]).map((f) => {
-                const item = READER_FONTS[f];
-                const active = settings.fontFamily === f;
-                return (
-                  <Pressable
-                    key={f}
-                    onPress={() => setSettings({ fontFamily: f })}
-                    style={[styles.fontChip, { borderColor: active ? colors.accent : theme.muted }]}
-                  >
-                    <Text style={[{ color: theme.text, fontSize: 15 }, item.regular ? { fontFamily: item.regular } : null]}>
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text style={{ color: theme.muted, fontSize: 12 }}>{font.note}</Text>
+            <Pressable
+              onPress={() => setShowFonts(true)}
+              style={[styles.select, { borderColor: theme.muted }]}
+            >
+              <Text style={[{ color: theme.text, fontSize: 15, flex: 1 }, bodyFont]} numberOfLines={1}>
+                {font.label}
+              </Text>
+              <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
+            </Pressable>
           </View>
           <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Satır aralığı</Text>
@@ -253,6 +205,35 @@ export default function Reader() {
           </View>
         </ScrollView>
       )}
+
+      <Modal visible={showFonts} transparent animationType="fade" onRequestClose={() => setShowFonts(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setShowFonts(false)}>
+          <Pressable style={[styles.sheet, { backgroundColor: theme.bg, borderColor: theme.muted }]}>
+            <Text style={[styles.sheetTitle, { color: theme.text }]}>Yazı tipi</Text>
+            <ScrollView>
+              {(Object.keys(READER_FONTS) as ReaderFont[]).map((f) => {
+                const item = READER_FONTS[f];
+                const active = settings.fontFamily === f;
+                return (
+                  <Pressable
+                    key={f}
+                    onPress={() => {
+                      setSettings({ fontFamily: f });
+                      setShowFonts(false);
+                    }}
+                    style={[styles.fontRow, active && { backgroundColor: colors.accent + '33' }]}
+                  >
+                    <Text style={[{ color: theme.text, fontSize: 17 }, item.regular ? { fontFamily: item.regular } : null]}>
+                      {item.label}
+                    </Text>
+                    <Text style={{ color: theme.muted, fontSize: 12 }}>{item.note}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <ScrollView
         ref={scroll}
@@ -349,7 +330,10 @@ const styles = StyleSheet.create({
   panel: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexGrow: 0 },
   panelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelLabel: { width: 100, fontSize: 14 },
-  jumpInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 15 },
-  fontChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5 },
+  select: { flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 24 },
+  sheet: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 12, maxHeight: '75%' },
+  sheetTitle: { fontSize: 16, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 8 },
+  fontRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 2 },
   swatch: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 2 },
 });
