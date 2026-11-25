@@ -64,6 +64,8 @@ const MAX_CONSECUTIVE_FAILURES = 4;
 /** Gemini's free tier allows only a few requests a minute. */
 const MIN_TRANSLATE_GAP_MS = 6000;
 const RATE_RETRIES = 6;
+/** Overload retries: 15 s, 30 s, 60 s, 120 s, 120 s (about 6 minutes in all). */
+const BUSY_RETRIES = 5;
 
 export interface JobOptions {
   /** Translate to Turkish too. Defaults to the "auto translate" setting. */
@@ -138,6 +140,19 @@ export async function startDownload(bookId: string, indexes: number[], options: 
           await sleep(Math.min(90_000, e.retryAfterMs ?? 20_000 * (attempt + 1)));
           continue;
         }
+        if (e instanceof GeminiError && e.kind === 'busy') {
+          if (attempt < BUSY_RETRIES) {
+            const waitMs = Math.min(120_000, 15_000 * 2 ** attempt);
+            state.phase = `Gemini yoğun, ${Math.round(waitMs / 1000)} sn sonra tekrar denenecek`;
+            set(bookId, { ...state });
+            await sleep(waitMs);
+            continue;
+          }
+          throw new GeminiError(
+            'Gemini uzun süredir çok yoğun. Biraz sonra tekrar deneyin ya da Ayarlar’dan başka bir model seçin.',
+            'busy',
+          );
+        }
         if (e instanceof GeminiError && e.kind === 'other' && attempt < 1) continue;
         throw e;
       }
@@ -197,7 +212,7 @@ export async function startDownload(bookId: string, indexes: number[], options: 
           state.translated++;
         } catch (e) {
           const err = e as GeminiError;
-          if (err.kind === 'daily' || err.kind === 'auth') {
+          if (err.kind === 'daily' || err.kind === 'auth' || err.kind === 'busy') {
             // Keep downloading; translation can be resumed later.
             translate = false;
             state.translating = false;

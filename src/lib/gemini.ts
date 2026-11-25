@@ -10,7 +10,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 export class GeminiError extends Error {
   constructor(
     message: string,
-    readonly kind: 'auth' | 'rate' | 'daily' | 'blocked' | 'other',
+    readonly kind: 'auth' | 'rate' | 'daily' | 'busy' | 'blocked' | 'other',
     readonly retryAfterMs?: number,
   ) {
     super(message);
@@ -31,7 +31,7 @@ async function call<T>(key: string, path: string, init?: RequestInit): Promise<T
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key, ...(init?.headers ?? {}) },
     });
   } catch (e) {
-    throw new GeminiError(`Gemini'ye bağlanılamadı: ${(e as Error).message}`, 'other');
+    throw new GeminiError(`Gemini'ye bağlanılamadı: ${(e as Error).message}`, 'busy');
   }
   const text = await res.text();
   let body: any = null;
@@ -52,6 +52,10 @@ async function call<T>(key: string, path: string, init?: RequestInit): Promise<T
     const daily = /per ?day|daily|PerDay/i.test(JSON.stringify(details) + message);
     if (daily) throw new GeminiError('Gemini günlük kullanım hakkı doldu. Yarın devam edebilir ya da başka bir model seçebilirsiniz.', 'daily');
     throw new GeminiError('Gemini dakikalık sınırı aşıldı, biraz bekleniyor…', 'rate', retryMs);
+  }
+  // Temporary overload on Google's side ("high demand", "overloaded", 503/500/504).
+  if (res.status === 500 || res.status === 503 || res.status === 504 || /high demand|overloaded|unavailable|try again later/i.test(message)) {
+    throw new GeminiError('Gemini şu an çok yoğun (geçici bir durum).', 'busy');
   }
   throw new GeminiError(`Gemini hatası: ${message}`, 'other');
 }
