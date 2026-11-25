@@ -72,7 +72,6 @@ const openSocket: WsFactory = (url, headers) =>
     { headers },
   );
 const deps = (): EdgeDeps => ({
-  sha256: (s) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, s),
   uuid: () => Crypto.randomUUID(),
   openSocket,
   clockSkew,

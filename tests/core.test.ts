@@ -25,7 +25,8 @@ import {
   synthesize,
 } from '../src/lib/tts/edge';
 import { mp3Duration, trimMp3 } from '../src/lib/tts/mp3';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { secMsGecV2 } from '../src/lib/tts/drm';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -245,6 +246,22 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.deepEqual(words, [{ text: 'Merhaba', start: 0.1, end: 0.5 }]);
   });
 
+  await test('edge tts v2 token matches edge-tts 7.3.1', () => {
+    // Reference values produced by edge_tts.drm.generate_sec_ms_gec_v2 (Python).
+    assert.equal(
+      secMsGecV2(secMsGecInput(1700000000)),
+      '2CD23A2CA0B2595A-F3C846C370E05F9CC83ACC5F995C5F5D87A4D0F14CE8936A0F902E64099E38A2',
+    );
+    assert.equal(
+      secMsGecV2(secMsGecInput(1764100000)),
+      '005202A2C6B3CBE3-1975F4BB4B2FFD193E319C7A3EFB09A584E4B57CAC7A6F306805C00D1196B80D',
+    );
+    assert.equal(
+      secMsGecV2(secMsGecInput(1800000000.7)),
+      '99E54519B490BE5C-E162DB0977FBDCB9B86DD8148BF1BCDC3C0303176CE39852A42B415935C20654',
+    );
+  });
+
   await test('word locating and long paragraph splitting', () => {
     const text = '“Well, I got permission,” he said. Done!';
     const loc = locateWords(text, [
@@ -284,7 +301,6 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     let opened = '';
     let hdrs: Record<string, string> = {};
     const res = await synthesize('Merhaba dünya', { voice: 'tr-TR-AhmetNeural' }, {
-      sha256: async (s) => createHash('sha256').update(s).digest('hex'),
       uuid: randomUUID,
       openSocket: (url, headers) => {
         opened = url;
@@ -317,7 +333,7 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     });
     assert.deepEqual([...res.audio], [1, 2, 3]);
     assert.deepEqual(res.words, [{ text: 'Merhaba', start: 0.05, end: 0.25 }]);
-    assert.match(opened, /^wss:\/\/speech\.platform\.bing\.com\/.*TrustedClientToken=.*&ConnectionId=[0-9a-f]{32}&Sec-MS-GEC=[0-9A-F]{64}&Sec-MS-GEC-Version=1-/);
+    assert.match(opened, /^wss:\/\/speech\.platform\.bing\.com\/.*TrustedClientToken=.*&ConnectionId=[0-9a-f]{32}&Sec-MS-GEC=[0-9A-F]{16}-[0-9A-F]{64}&Sec-MS-GEC-Version=2-/);
     assert.equal(hdrs.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
     assert.match(sent[0], /Path:speech\.config/);
     assert.match(sent[1], /Path:ssml\r\n\r\n<speak .*AhmetNeural.*Merhaba dünya/);

@@ -4,8 +4,9 @@
  * which drives the follow-along highlight.
  *
  * Kept free of React Native imports so the protocol helpers can be tested in
- * Node; the WebSocket constructor and SHA-256 function are passed in.
+ * Node; the WebSocket constructor is passed in.
  */
+import { secMsGecV2 } from './drm';
 
 export const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
 const CHROMIUM_FULL_VERSION = '143.0.3650.75';
@@ -172,8 +173,6 @@ type WsLike = {
 export type WsFactory = (url: string, headers: Record<string, string>) => WsLike;
 
 export interface EdgeDeps {
-  /** Uppercase or lowercase hex SHA-256 of a string. */
-  sha256: (s: string) => Promise<string>;
   uuid: () => string;
   openSocket: WsFactory;
   /** Seconds to add to the device clock (the service rejects a skewed clock). */
@@ -190,9 +189,9 @@ const randomHex = (n: number) => {
 /** Synthesize one piece of text (keep it under ~3000 characters). */
 export async function synthesize(text: string, opts: SpeakOptions, deps: EdgeDeps): Promise<SpeechResult> {
   const now = Date.now() / 1000 + (deps.clockSkew ?? 0);
-  const gec = (await deps.sha256(secMsGecInput(now))).toUpperCase();
+  const gec = secMsGecV2(secMsGecInput(now));
   const connId = deps.uuid().replace(/-/g, '');
-  const url = `${WSS_URL}&ConnectionId=${connId}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=1-${CHROMIUM_FULL_VERSION}`;
+  const url = `${WSS_URL}&ConnectionId=${connId}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=2-${CHROMIUM_FULL_VERSION}`;
   const headers = { ...EDGE_HEADERS, Cookie: `muid=${randomHex(32)};` };
 
   return new Promise<SpeechResult>((resolve, reject) => {

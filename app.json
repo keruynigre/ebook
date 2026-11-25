@@ -3,7 +3,7 @@
     "name": "Ebook",
     "slug": "ebook",
     "scheme": "ebook",
-    "version": "0.7.1",
+    "version": "0.7.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
