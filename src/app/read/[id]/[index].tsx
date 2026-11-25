@@ -244,7 +244,7 @@ export default function Reader() {
 
       {showSettings && (
         <ScrollView
-          style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted, maxHeight: '60%' }]}
+          style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted, maxHeight: '75%' }]}
           contentContainerStyle={{ gap: 10 }}
           keyboardShouldPersistTaps="handled"
         >
@@ -538,7 +538,7 @@ export default function Reader() {
 }
 
 const styles = StyleSheet.create({
-  panel: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexGrow: 0 },
+  panel: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexGrow: 0, flexShrink: 0 },
   panelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelLabel: { width: 100, fontSize: 14 },
   select: { flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
