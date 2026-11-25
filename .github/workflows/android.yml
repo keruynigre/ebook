@@ -1,0 +1,77 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: 1
+      EXPO_NO_TELEMETRY: 1
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and test
+        run: |
+          npx tsc --noEmit
+          npm test
+
+      - name: Generate the Android project
+        run: |
+          npx expo prebuild --platform android --no-install
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g/' android/gradle.properties
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Name the APK
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "TAG=v${VERSION}-build.${BUILD_NUMBER}" >> "$GITHUB_ENV"
+          echo "APK=ebook-${VERSION}-build${BUILD_NUMBER}.apk" >> "$GITHUB_ENV"
+          cp android/app/build/outputs/apk/release/app-release.apk "ebook-${VERSION}-build${BUILD_NUMBER}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK }}
+          path: ${{ env.APK }}
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Ebook ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: ${{ env.APK }}
+          body: |
+            Telefondan kurulum: aşağıdaki **${{ env.APK }}** dosyasına dokunun, indirin ve açın.
+            İlk kurulumda Android "bilinmeyen uygulamaları yükleme" izni ister; tarayıcınıza bu izni verin.
+
+            Commit: ${{ github.sha }}
