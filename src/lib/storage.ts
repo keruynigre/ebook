@@ -111,3 +111,26 @@ export function exportsDir(): Directory {
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
   return dir;
 }
+
+/** Bytes the book takes on the phone (chapters, translations, cover, glossary). */
+const sizeCache = new Map<string, { key: string; bytes: number }>();
+/** `version` changes whenever the book's files change (e.g. updatedAt), so the folder is only measured then. */
+export function bookSize(id: string, version = ''): number {
+  const hit = sizeCache.get(id);
+  if (hit && hit.key === version) return hit.bytes;
+  let bytes = 0;
+  try {
+    const dir = bookDir(id);
+    bytes = dir.exists ? (dir.size ?? 0) : 0;
+  } catch {
+    bytes = 0;
+  }
+  sizeCache.set(id, { key: version, bytes });
+  return bytes;
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

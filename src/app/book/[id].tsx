@@ -8,7 +8,7 @@ import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import { cancelDownload, startDownload, useDownload } from '../../lib/downloads';
 import { refreshChapterList, removeBook, useBook } from '../../lib/library';
 import { useSettings } from '../../lib/settings';
-import { coverFile } from '../../lib/storage';
+import { bookSize, coverFile, formatSize } from '../../lib/storage';
 import { colors } from '../../lib/theme';
 import type { Book, ChapterRef } from '../../lib/types';
 
@@ -206,6 +206,7 @@ export default function BookScreen() {
     ]);
 
   const cover = coverFile(book);
+  const size = bookSize(book.id, `${book.updatedAt}:${book.downloaded.length}:${book.translated?.length ?? 0}`);
   const running = !!download?.running;
   const next = firstMissing(book);
   const saved = book.progress && downloaded.has(book.progress.index) ? book.progress.index : null;
@@ -222,6 +223,7 @@ export default function BookScreen() {
             {book.downloaded.length} / {total} bölüm indirildi
           </Text>
           {!!book.translated?.length && <Text style={ui.muted}>{book.translated.length} bölüm Türkçe</Text>}
+          <Text style={ui.muted}>Telefonda {formatSize(size)} yer kaplıyor</Text>
         </View>
       </View>
       {!!book.description && (

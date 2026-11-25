@@ -5,12 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, ui } from '../components/ui';
 import { useLibrary } from '../lib/library';
-import { coverFile } from '../lib/storage';
+import { bookSize, coverFile, formatSize } from '../lib/storage';
 import { colors } from '../lib/theme';
 import type { Book } from '../lib/types';
 
 function BookRow({ book }: { book: Book }) {
   const cover = coverFile(book);
+  const size = bookSize(book.id, `${book.updatedAt}:${book.downloaded.length}:${book.translated?.length ?? 0}`);
   return (
     <Link href={{ pathname: '/book/[id]', params: { id: book.id } }} asChild>
       <Pressable style={({ pressed }) => [styles.row, pressed && { opacity: 0.8 }]}>
@@ -34,6 +35,7 @@ function BookRow({ book }: { book: Book }) {
             {book.downloaded.length} / {book.chapters.length} bölüm indirildi
             {book.translated?.length ? ` · ${book.translated.length} Türkçe` : ''}
           </Text>
+          <Text style={ui.muted}>{formatSize(size)}</Text>
         </View>
       </Pressable>
     </Link>
