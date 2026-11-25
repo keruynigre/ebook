@@ -35,6 +35,8 @@ export interface Book {
   chapters: ChapterRef[];
   /** 0-based indexes of chapters stored on the device. */
   downloaded: number[];
+  /** 0-based indexes of chapters with a Turkish translation on the device. */
+  translated?: number[];
   /** Where the person stopped reading: chapter index and scroll position (0–1). */
   progress?: { index: number; position: number; updatedAt: number };
   /** File name of the cover inside the book folder, if any. */

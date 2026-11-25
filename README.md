@@ -26,6 +26,16 @@ Yeni sürümler eskisinin üstüne kurulur; kitaplığınız silinmez.
 
 İndirme sürerken bildirim çubuğunda ilerleme görünür; uygulamayı aşağı indirseniz ya da ekranı kapatsanız da indirme devam eder. İndirilen bölümler telefonda saklanır. İndirme yarıda kalırsa tekrar **İndir**'e basın; zaten indirilmiş bölümler atlanır.
 
+### Türkçe çeviri (Gemini)
+
+1. https://aistudio.google.com/apikey adresinden ücretsiz bir Gemini API anahtarı alın.
+2. Uygulamada **Ayarlar** → anahtarı yapıştırın → **Kaydet** → bir model seçin ("Flash" önerilir).
+3. Kitap sayfasında aralık seçip **Türkçeye çevir**'e basın ya da Ayarlar'dan **İndirirken otomatik çevir**'i açın.
+
+Karakter adları çevrilmez. Unvanlar ve teknik adlar gibi terimler için her kitaba bir sözlük tutulur; böylece aynı terim kitap boyunca aynı karşılıkla çevrilir. Okurken **Aa** → **Dil** ile Türkçe ve orijinal arasında geçebilirsiniz. EPUB oluştururken dil sorulur.
+
+Ücretsiz katmanın günlük bir sınırı vardır. Sınır dolunca çeviri durur, indirme devam eder; ertesi gün **Türkçeye çevir** ile kalınan yerden sürdürülür. Anahtar telefonda şifreli saklanır ve yalnızca Google'a gönderilir.
+
 ### Desteklenen siteler
 
 - **NovelFull** ve aynı temayı kullanan siteler: tam destek
@@ -49,7 +59,8 @@ npx expo start        # geliştirme sunucusu
 - `src/app/`: ekranlar (Expo Router); `read/[id]/[index].tsx` uygulama içi okuyucu
 - `src/lib/sources/`: site ayrıştırıcıları (`novelfull.ts`, `generic.ts`)
 - `src/lib/epub.ts`: EPUB 3 oluşturucu
-- `src/lib/downloads.ts`: bölüm indirme kuyruğu
+- `src/lib/downloads.ts`: bölüm indirme ve çeviri kuyruğu
+- `src/lib/gemini.ts`: Gemini ile çeviri ve terim sözlüğü
 - `src/components/BrowserHost.tsx`: site doğrulamalarını geçen gizli WebView
 - `modules/ebook-foreground/`: indirmeyi arka planda sürdüren Android ön plan hizmeti (Kotlin)
 

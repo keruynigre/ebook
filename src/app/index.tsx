@@ -32,6 +32,7 @@ function BookRow({ book }: { book: Book }) {
           )}
           <Text style={[ui.muted, { marginTop: 6 }]}>
             {book.downloaded.length} / {book.chapters.length} bölüm indirildi
+            {book.translated?.length ? ` · ${book.translated.length} Türkçe` : ''}
           </Text>
         </View>
       </Pressable>
@@ -46,7 +47,12 @@ export default function Library() {
     <View style={ui.screen}>
       <Stack.Screen
         options={{
-          headerRight: () => <Button small title="+ Ekle" onPress={() => router.push('/add')} />,
+          headerRight: () => (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button small variant="secondary" title="Ayarlar" onPress={() => router.push('/settings')} />
+              <Button small title="+ Ekle" onPress={() => router.push('/add')} />
+            </View>
+          ),
         }}
       />
       <FlatList

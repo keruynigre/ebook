@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import JSZip from 'jszip';
 
 import { buildEpub, detectImageType } from '../src/lib/epub';
+import { mergeGlossary, parseTranslation } from '../src/lib/gemini';
 import { novelFull, parseChapterOptions, parseChapterPage, parseNovelPage } from '../src/lib/sources/novelfull';
 import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/generic';
 import { sourceForUrl } from '../src/lib/sources';
@@ -139,6 +140,18 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     for (const n of names.filter((n) => /\.(xhtml|opf|ncx|xml)$/.test(n))) {
       writeFileSync(join(out, n.replace(/\//g, '_')), await zip.file(n)!.async('string'));
     }
+  });
+
+  await test('translation parsing', () => {
+    const orig = { title: 'Chapter 1', paragraphs: ['a', 'b', 'c'] };
+    const r = parseTranslation('```json\n{"title":"Bölüm 1","paragraphs":["x","y"," z "],"newTerms":[{"source":"Qi","target":"Çi"},{"source":"","target":"x"}]}\n```', orig);
+    assert.equal(r.chapter.title, 'Bölüm 1');
+    assert.deepEqual(r.chapter.paragraphs, ['x', 'y', 'z']);
+    assert.deepEqual(r.newTerms, [{ source: 'Qi', target: 'Çi' }]);
+    assert.throws(() => parseTranslation('{"title":"t","paragraphs":["x"]}', orig), /eksik/);
+    assert.throws(() => parseTranslation('not json', orig));
+    const g = mergeGlossary([{ source: 'Qi', target: 'Çi' }], [{ source: 'qi', target: 'Ki' }, { source: 'Dao', target: 'Dao' }]);
+    assert.deepEqual(g.map((x) => x.target), ['Çi', 'Dao']);
   });
 
   console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

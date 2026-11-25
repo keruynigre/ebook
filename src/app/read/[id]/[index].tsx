@@ -16,7 +16,7 @@ import { Button, ProgressBar } from '../../../components/ui';
 import { startDownload, useDownload } from '../../../lib/downloads';
 import { getBook, saveProgress, useBook } from '../../../lib/library';
 import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../../../lib/settings';
-import { loadChapter } from '../../../lib/storage';
+import { loadChapter, loadTranslation } from '../../../lib/storage';
 import { colors } from '../../../lib/theme';
 import type { ChapterContent } from '../../../lib/types';
 
@@ -34,6 +34,8 @@ export default function Reader() {
   const scroll = useRef<ScrollViewInstance>(null);
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
+  const [translation, setTranslation] = useState<ChapterContent | null>(null);
+  const isTranslated = !!book?.translated?.includes(i);
 
   // Scroll position as a share of the chapter (0–1), so it survives font size changes.
   const position = useRef(0);
@@ -63,6 +65,18 @@ export default function Reader() {
     };
   }, [id, i, save]);
 
+  // Load (or reload, once a translation finishes) the Turkish text.
+  useEffect(() => {
+    let alive = true;
+    setTranslation(null);
+    if (isTranslated) loadTranslation(id, i).then((t) => alive && setTranslation(t)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [id, i, isTranslated]);
+
+  const shown = settings.showTranslation && translation ? translation : chapter;
+
   const tryRestore = () => {
     const target = restoreTo.current;
     const { content, view } = sizes.current;
@@ -85,14 +99,16 @@ export default function Reader() {
     restoreTo.current = 0;
     router.setParams({ index: String(k) });
   };
-  const title = book?.chapters[i]?.title ?? chapter?.title ?? '';
+  const title = (shown === translation && translation?.title) || book?.chapters[i]?.title || chapter?.title || '';
   const nextExists = i + 1 < total;
   const nextMissing = nextExists && !has(i + 1);
   const downloading = !!download?.running;
 
   const downloadNext = () => {
     const indexes = Array.from({ length: Math.min(10, total - i - 1) }, (_, k) => i + 1 + k);
-    startDownload(id, indexes).catch(() => undefined);
+    startDownload(id, indexes, { translate: settings.autoTranslate || (settings.showTranslation && isTranslated) }).catch(
+      () => undefined,
+    );
   };
 
   const changeFont = (delta: number) =>
@@ -135,6 +151,21 @@ export default function Reader() {
             ))}
           </View>
           <View style={styles.panelRow}>
+            <Text style={[styles.panelLabel, { color: theme.text }]}>Dil</Text>
+            <Button
+              small
+              variant={settings.showTranslation ? 'primary' : 'secondary'}
+              title="Türkçe"
+              onPress={() => setSettings({ showTranslation: true })}
+            />
+            <Button
+              small
+              variant={!settings.showTranslation ? 'primary' : 'secondary'}
+              title="Orijinal"
+              onPress={() => setSettings({ showTranslation: false })}
+            />
+          </View>
+          <View style={styles.panelRow}>
             <Text style={[styles.panelLabel, { color: theme.text }]}>Tema</Text>
             {(Object.keys(READER_THEMES) as ReaderTheme[]).map((t) => (
               <Pressable
@@ -170,7 +201,7 @@ export default function Reader() {
           {title}
         </Text>
         {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
-        {chapter?.paragraphs.map((p, k) => (
+        {shown?.paragraphs.map((p, k) => (
           <Text
             key={k}
             selectable
@@ -185,6 +216,25 @@ export default function Reader() {
             {p}
           </Text>
         ))}
+
+        {chapter && settings.showTranslation && !isTranslated && (
+          <View style={{ gap: 6, marginTop: 4, marginBottom: 8 }}>
+            {settings.hasGeminiKey ? (
+              <Button
+                small
+                variant="secondary"
+                title={downloading ? 'Çeviri sürüyor…' : 'Bu bölümü Türkçeye çevir'}
+                disabled={downloading}
+                onPress={() => startDownload(id, [i], { translate: true }).catch(() => undefined)}
+              />
+            ) : (
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Türkçe çeviri için Ayarlar’dan Gemini anahtarı girin.</Text>
+            )}
+            {download?.translateError && !downloading && (
+              <Text style={{ color: colors.danger, fontSize: 13 }}>{download.translateError}</Text>
+            )}
+          </View>
+        )}
 
         {chapter && (
           <View style={{ gap: 10, marginTop: 16 }}>

@@ -1,5 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
+import type { GlossaryEntry } from './gemini';
 import type { Book, ChapterContent } from './types';
 
 /**
@@ -65,6 +66,30 @@ export async function loadChapter(id: string, index: number): Promise<ChapterCon
   const f = new File(chaptersDir(id), `${index}.json`);
   if (!f.exists) return null;
   return JSON.parse(await f.text()) as ChapterContent;
+}
+
+export async function saveTranslation(id: string, index: number, content: ChapterContent): Promise<void> {
+  await new File(chaptersDir(id), `${index}.tr.json`).write(JSON.stringify(content));
+}
+
+export async function loadTranslation(id: string, index: number): Promise<ChapterContent | null> {
+  const f = new File(chaptersDir(id), `${index}.tr.json`);
+  if (!f.exists) return null;
+  return JSON.parse(await f.text()) as ChapterContent;
+}
+
+export async function loadGlossary(id: string): Promise<GlossaryEntry[]> {
+  const f = new File(bookDir(id), 'glossary.json');
+  if (!f.exists) return [];
+  try {
+    return JSON.parse(await f.text()) as GlossaryEntry[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveGlossary(id: string, glossary: GlossaryEntry[]): Promise<void> {
+  await new File(bookDir(id), 'glossary.json').write(JSON.stringify(glossary));
 }
 
 export async function saveCover(id: string, bytes: Uint8Array, ext: string): Promise<string> {

@@ -10,6 +10,7 @@ import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import { cancelDownload, startDownload, useDownload } from '../../lib/downloads';
 import { exportEpub, saveToFolder } from '../../lib/exportEpub';
 import { refreshChapterList, removeBook, useBook } from '../../lib/library';
+import { useSettings } from '../../lib/settings';
 import { coverFile } from '../../lib/storage';
 import { colors } from '../../lib/theme';
 import type { Book, ChapterRef } from '../../lib/types';
@@ -18,11 +19,13 @@ const ChapterRow = memo(function ChapterRow({
   index,
   chapter,
   downloaded,
+  translated,
   onOpen,
 }: {
   index: number;
   chapter: ChapterRef;
   downloaded: boolean;
+  translated: boolean;
   onOpen: (i: number) => void;
 }) {
   return (
@@ -36,6 +39,7 @@ const ChapterRow = memo(function ChapterRow({
       <Text style={[ui.text, { flex: 1, color: downloaded ? colors.text : colors.muted }]} numberOfLines={1}>
         {chapter.title}
       </Text>
+      {translated && <Text style={styles.trBadge}>TR</Text>}
     </Pressable>
   );
 });
@@ -66,6 +70,8 @@ export default function BookScreen() {
   const [message, setMessage] = useState('');
 
   const downloaded = useMemo(() => new Set(book?.downloaded ?? []), [book?.downloaded]);
+  const translatedSet = useMemo(() => new Set(book?.translated ?? []), [book?.translated]);
+  const settings = useSettings();
 
   const openChapter = useCallback(
     (index: number) => router.push({ pathname: '/read/[id]/[index]', params: { id, index: String(index) } }),
@@ -96,10 +102,22 @@ export default function BookScreen() {
     setToText(String(count === 'all' ? total : Math.min(f + count, total)));
   };
 
-  const doDownload = (from: number, to: number) => {
+  const doDownload = (from: number, to: number, translate?: boolean) => {
     const indexes = Array.from({ length: to - from + 1 }, (_, k) => from + k);
     setExported(null);
-    startDownload(book.id, indexes).catch((e) => Alert.alert('İndirme hatası', (e as Error).message));
+    startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('İndirme hatası', (e as Error).message));
+  };
+
+  const onTranslate = () => {
+    if (!settings.hasGeminiKey || !settings.geminiModel) {
+      Alert.alert('Gemini anahtarı gerekli', 'Çeviri için önce Ayarlar’dan Gemini API anahtarınızı girin.', [
+        { text: 'Vazgeç', style: 'cancel' },
+        { text: 'Ayarlara git', onPress: () => router.push('/settings') },
+      ]);
+      return;
+    }
+    const r = parseRange();
+    if (r) doDownload(r[0], r[1], true);
   };
 
   const onDownload = () => {
@@ -113,17 +131,26 @@ export default function BookScreen() {
     const [from, to] = r;
     let missing = 0;
     for (let i = from; i <= to; i++) if (!downloaded.has(i)) missing++;
-    const run = async () => {
+    let anyTr = false;
+    for (let i = from; i <= to && !anyTr; i++) anyTr = translatedSet.has(i);
+    const build = async (turkish: boolean) => {
       setExporting(true);
       setExported(null);
       try {
-        const res = await exportEpub(book, from, to);
+        const res = await exportEpub(book, from, to, turkish);
         setExported({ file: res.file, count: res.chapterCount, missing: res.missing });
       } catch (e) {
         Alert.alert('EPUB oluşturulamadı', (e as Error).message);
       } finally {
         setExporting(false);
       }
+    };
+    const run = () => {
+      if (!anyTr) return build(false);
+      Alert.alert('Hangi dilde?', 'Bu aralıkta Türkçe çevrilmiş bölümler var. Çevrilmemiş bölümler orijinal dilinde eklenir.', [
+        { text: 'Orijinal', onPress: () => build(false) },
+        { text: 'Türkçe', onPress: () => build(true) },
+      ]);
     };
     if (missing === 0) return run();
     if (missing === to - from + 1) {
@@ -218,6 +245,7 @@ export default function BookScreen() {
           <Text style={[ui.text, { marginTop: 4 }]}>
             {book.downloaded.length} / {total} bölüm indirildi
           </Text>
+          {!!book.translated?.length && <Text style={ui.muted}>{book.translated.length} bölüm Türkçe</Text>}
         </View>
       </View>
       {!!book.description && (
@@ -263,19 +291,24 @@ export default function BookScreen() {
         </View>
         <View style={ui.row}>
           <Button title="İndir" onPress={onDownload} disabled={running} style={{ flex: 1 }} />
-          <Button title="EPUB oluştur" variant="secondary" onPress={onExport} busy={exporting} disabled={running} style={{ flex: 1 }} />
+          <Button title="Türkçeye çevir" variant="secondary" onPress={onTranslate} disabled={running} style={{ flex: 1 }} />
         </View>
+        <Button title="EPUB oluştur" variant="secondary" onPress={onExport} busy={exporting} disabled={running} />
+        {settings.autoTranslate && settings.hasGeminiKey && (
+          <Text style={ui.muted}>Otomatik çeviri açık: “İndir” bölümleri Türkçeye de çevirir.</Text>
+        )}
 
         {download && (running || download.error || download.finishedAt) && (
           <View style={{ gap: 6, marginTop: 4 }}>
             {download.total > 0 && <ProgressBar value={(download.done + download.failed) / download.total} />}
             <Text style={ui.muted}>
               {running
-                ? `İndiriliyor ${download.done + download.failed + 1}/${download.total}: ${download.current ?? ''}`
+                ? `${download.phase ?? 'İndiriliyor'} ${download.done + download.failed + 1}/${download.total}: ${download.current ?? ''}`
                 : download.total === 0
-                  ? 'Bu aralıktaki bölümler zaten indirilmiş.'
-                  : `Bitti: ${download.done} bölüm indirildi${download.failed ? `, ${download.failed} bölüm alınamadı` : ''}.`}
+                  ? 'Bu aralıktaki bölümler zaten hazır.'
+                  : `Bitti: ${download.done} bölüm hazır${download.translated ? `, ${download.translated} bölüm çevrildi` : ''}${download.failed ? `, ${download.failed} bölüm alınamadı` : ''}.`}
             </Text>
+            {!!download.translateError && <Text style={ui.error}>Çeviri: {download.translateError}</Text>}
             {!!download.error && !running && <Text style={ui.error}>{download.error}</Text>}
             {running && <Button small variant="secondary" title="Durdur" onPress={() => cancelDownload(book.id)} />}
           </View>
@@ -315,7 +348,7 @@ export default function BookScreen() {
         data={book.chapters}
         keyExtractor={(c, i) => `${i}:${c.url}`}
         renderItem={({ item, index }) => (
-          <ChapterRow index={index} chapter={item} downloaded={downloaded.has(index)} onOpen={openChapter} />
+          <ChapterRow index={index} chapter={item} downloaded={downloaded.has(index)} translated={translatedSet.has(index)} onOpen={openChapter} />
         )}
         ListHeaderComponent={header}
         contentContainerStyle={{ padding: 16, paddingBottom: 16 + insets.bottom }}
@@ -338,4 +371,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   chapterMark: { fontSize: 12, width: 14, textAlign: 'center' },
+  trBadge: { color: colors.accent, fontSize: 11, fontWeight: '800', borderWidth: 1, borderColor: colors.accent, borderRadius: 4, paddingHorizontal: 4 },
 });

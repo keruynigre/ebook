@@ -29,6 +29,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="index" options={{ title: 'Kitaplığım' }} />
           <Stack.Screen name="add" options={{ title: 'Roman ekle' }} />
+          <Stack.Screen name="settings" options={{ title: 'Ayarlar' }} />
           <Stack.Screen name="book/[id]" options={{ title: '' }} />
           <Stack.Screen name="read/[id]/[index]" options={{ title: '' }} />
         </Stack>
