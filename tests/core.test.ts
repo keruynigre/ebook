@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
-import { emptyNotebook, findCharacter, mergeChapterInfo } from '../src/lib/notebookCore';
+import { emptyNotebook, findCharacter, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -314,13 +314,32 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(findCharacter(nb.characters, 'Bilinmeyen'), -1);
   });
 
+  await test('notebook keeps both languages', () => {
+    const nb = mergeChapterInfo(emptyNotebook(), 3, {
+      summary: 'Köye döner.',
+      summaryEn: 'He returns to the village.',
+      characters: [{ name: 'Ali', description: 'Uzun boylu.', descriptionEn: 'Tall.' }],
+    });
+    assert.equal(nb.summariesEn?.['3'], 'He returns to the village.');
+    assert.equal(noteText(nb.characters[0].notes[0], 'en'), 'Tall.');
+    assert.equal(noteText(nb.characters[0].notes[0], 'tr'), 'Uzun boylu.');
+    assert.equal(noteText({ chapter: 0, text: 'Sadece Türkçe' }, 'en'), 'Sadece Türkçe');
+  });
+
   await test('translation carries notebook info', () => {
     const r = parseTranslation(
-      JSON.stringify({ title: 'T', paragraphs: ['a'], summary: 'Özet', characters: [{ name: 'Ali', description: 'Uzun boylu' }, { name: '' }] }),
+      JSON.stringify({
+        title: 'T',
+        paragraphs: ['a'],
+        summary: 'Özet',
+        summary_en: 'Summary',
+        characters: [{ name: 'Ali', description: 'Uzun boylu', description_en: 'Tall' }, { name: '' }],
+      }),
       { title: 'T', paragraphs: ['x'] },
     );
     assert.equal(r.info.summary, 'Özet');
-    assert.deepEqual(r.info.characters, [{ name: 'Ali', description: 'Uzun boylu' }]);
+    assert.equal(r.info.summaryEn, 'Summary');
+    assert.deepEqual(r.info.characters, [{ name: 'Ali', description: 'Uzun boylu', descriptionEn: 'Tall' }]);
   });
 
   await test('word locating and long paragraph splitting', () => {

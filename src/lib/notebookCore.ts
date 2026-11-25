@@ -2,7 +2,10 @@
 
 export interface CharacterNote {
   chapter: number;
+  /** Turkish. */
   text: string;
+  /** English. */
+  en?: string;
 }
 
 export interface NotebookCharacter {
@@ -20,14 +23,20 @@ export interface Notebook {
   characters: NotebookCharacter[];
   /** Chapter index → short Turkish summary. */
   summaries: Record<string, string>;
+  /** Chapter index → the same summary in English. */
+  summariesEn?: Record<string, string>;
 }
 
 export interface ChapterInfo {
   summary?: string;
-  characters: { name: string; description: string }[];
+  summaryEn?: string;
+  characters: { name: string; description: string; descriptionEn?: string }[];
 }
 
-export const emptyNotebook = (): Notebook => ({ characters: [], summaries: {} });
+export const emptyNotebook = (): Notebook => ({ characters: [], summaries: {}, summariesEn: {} });
+
+/** Text of a note / summary in the reader's language, falling back to the other one. */
+export const noteText = (n: CharacterNote, lang: 'tr' | 'en') => (lang === 'en' ? n.en || n.text : n.text || n.en || '');
 
 const MAX_NOTES = 24;
 
@@ -64,6 +73,7 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
     const name = raw.name?.trim();
     if (!name || name.length > 60) continue;
     const description = (raw.description ?? '').trim();
+    const descriptionEn = (raw.descriptionEn ?? '').trim();
     let k = findCharacter(characters, name);
     if (k < 0) {
       characters.push({ name, aliases: [], notes: [], firstChapter: chapter, lastChapter: chapter, seenIn: [] });
@@ -80,16 +90,23 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
     c.firstChapter = Math.min(c.firstChapter, chapter);
     c.lastChapter = Math.max(c.lastChapter, chapter);
     if (!c.seenIn.includes(chapter)) c.seenIn = [...c.seenIn, chapter].sort((a, b) => a - b);
-    if (description) {
-      c.notes = c.notes.filter((x) => x.chapter !== chapter || normText(x.text) === normText(description));
-      if (!c.notes.some((x) => normText(x.text) === normText(description))) c.notes.push({ chapter, text: description });
+    if (description || descriptionEn) {
+      const key = normText(description || descriptionEn);
+      const same = (x: CharacterNote) => normText(x.text || x.en || '') === key;
+      c.notes = c.notes.filter((x) => x.chapter !== chapter || same(x));
+      const existing = c.notes.find(same);
+      if (existing) {
+        if (descriptionEn && !existing.en) existing.en = descriptionEn;
+      } else c.notes.push(descriptionEn ? { chapter, text: description, en: descriptionEn } : { chapter, text: description });
       c.notes.sort((a, b) => a.chapter - b.chapter);
       if (c.notes.length > MAX_NOTES) c.notes = [c.notes[0], ...c.notes.slice(-(MAX_NOTES - 1))];
     }
   }
   const summaries = { ...nb.summaries };
+  const summariesEn = { ...(nb.summariesEn ?? {}) };
   if (info.summary?.trim()) summaries[String(chapter)] = info.summary.trim();
-  return { characters, summaries };
+  if (info.summaryEn?.trim()) summariesEn[String(chapter)] = info.summaryEn.trim();
+  return { characters, summaries, summariesEn };
 }
 
 /** Parse the optional notebook fields of a Gemini answer. */
@@ -97,8 +114,18 @@ export function parseChapterInfo(data: any): ChapterInfo {
   const characters = Array.isArray(data?.characters)
     ? data.characters
         .filter((c: any) => typeof c?.name === 'string' && c.name.trim())
-        .map((c: any) => ({ name: c.name.trim(), description: typeof c.description === 'string' ? c.description.trim() : '' }))
+        .map((c: any) => {
+          const out: ChapterInfo['characters'][number] = {
+            name: c.name.trim(),
+            description: typeof c.description === 'string' ? c.description.trim() : '',
+          };
+          if (typeof c.description_en === 'string' && c.description_en.trim()) out.descriptionEn = c.description_en.trim();
+          return out;
+        })
     : [];
   const summary = typeof data?.summary === 'string' ? data.summary.trim() : undefined;
-  return { summary: summary || undefined, characters };
+  const summaryEn = typeof data?.summary_en === 'string' ? data.summary_en.trim() : undefined;
+  const info: ChapterInfo = { summary: summary || undefined, characters };
+  if (summaryEn) info.summaryEn = summaryEn;
+  return info;
 }

@@ -7,7 +7,7 @@ import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
 import { editNotebook, fillNotebook, missingChapters, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
-import { normName, type NotebookCharacter } from '../../lib/notebookCore';
+import { normName, noteText, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
 import { colors } from '../../lib/theme';
@@ -21,6 +21,8 @@ export default function NotebookScreen() {
   const job = useNotebookJob(id);
   const settings = useSettings();
   const insets = useSafeAreaInsets();
+  // Same language as the reader: Turkish when reading the translation, English for the original.
+  const lang: 'tr' | 'en' = settings.showTranslation ? 'tr' : 'en';
   const [tab, setTab] = useState<Tab>('characters');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
@@ -43,18 +45,19 @@ export default function NotebookScreen() {
   const characters = useMemo(() => {
     const list = (nb?.characters ?? []).filter((c) => c.firstChapter <= upTo);
     const filtered = q
-      ? list.filter((c) => normName(c.name).includes(q) || c.aliases.some((a) => normName(a).includes(q)) || c.notes.some((n) => normName(n.text).includes(q)))
+      ? list.filter((c) => normName(c.name).includes(q) || c.aliases.some((a) => normName(a).includes(q)) || c.notes.some((n) => normName(noteText(n, lang)).includes(q)))
       : list;
     return filtered.sort((a, b) => b.seenIn.length - a.seenIn.length || a.firstChapter - b.firstChapter);
-  }, [nb, q, upTo]);
+  }, [nb, q, upTo, lang]);
 
   const summaries = useMemo(() => {
+    const en = nb?.summariesEn ?? {};
     const entries = Object.entries(nb?.summaries ?? {})
-      .map(([k, v]) => ({ index: Number(k), text: v }))
+      .map(([k, v]) => ({ index: Number(k), text: (lang === 'en' && en[k]) || v }))
       .filter((e) => e.index <= upTo && e.text !== '—')
       .sort((a, b) => a.index - b.index);
     return q ? entries.filter((e) => normName(e.text).includes(q) || String(e.index + 1) === query.trim()) : entries;
-  }, [nb, q, query, upTo]);
+  }, [nb, q, query, upTo, lang]);
 
   const terms = useMemo(() => {
     const list = (glossary ?? []).map((g, index) => ({ ...g, index }));
@@ -206,14 +209,14 @@ export default function NotebookScreen() {
                 </Text>
                 {!expanded && !!notes.length && (
                   <Text style={ui.text} numberOfLines={2}>
-                    {notes[0].text}
+                    {noteText(notes[0], lang)}
                   </Text>
                 )}
                 {expanded &&
                   notes.map((n, k) => (
                     <Text key={k} style={ui.text}>
                       <Text style={{ color: colors.accent }}>{n.chapter + 1}. </Text>
-                      {n.text}
+                      {noteText(n, lang)}
                     </Text>
                   ))}
               </Pressable>

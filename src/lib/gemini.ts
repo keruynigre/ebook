@@ -177,8 +177,8 @@ const APP_RULES = `Uygulama kuralları (yanıtın okunabilmesi için zorunlu):
 - Karakter ve yer adlarını kitap boyunca aynı yaz; sözlükte verilen terimleri her zaman sözlükteki karşılığıyla kullan.
 - Çeviri sonuna eklenecek notları paragrafların içine değil "notes" listesine yaz (her not kısa bir cümle). Not yoksa boş liste ver.
 - Bu bölümde ilk kez geçen ve tutarlı çevrilmesi gereken özel terimleri (unvanlar, teknik adları, seviye adları, eşya adları) "newTerms" listesine ekle. Kişi adlarını ekleme.
-- "summary": bölümün 2-4 cümlelik Türkçe özeti (ne oldu, kim ne yaptı).
-- "characters": bu bölümde görünen ya da konuşan önemli karakterler. "name": çeviride kullandığın ad. "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler); kısa ve MUTLAKA TÜRKÇE yaz, İngilizce yazma; yeni bilgi yoksa boş bırak.
+- "summary": bölümün 2-4 cümlelik Türkçe özeti (ne oldu, kim ne yaptı); "summary_en": aynı özetin İngilizcesi.
+- "characters": bu bölümde görünen ya da konuşan önemli karakterler. "name": çeviride kullandığın ad. "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
 - Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Translates one chapter to Turkish. `glossary` keeps terms consistent across chapters. */
@@ -225,11 +225,12 @@ ${JSON.stringify(input)}`;
         },
       },
       summary: { type: 'STRING' },
+      summary_en: { type: 'STRING' },
       characters: {
         type: 'ARRAY',
         items: {
           type: 'OBJECT',
-          properties: { name: { type: 'STRING' }, description: { type: 'STRING' } },
+          properties: { name: { type: 'STRING' }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
           required: ['name'],
         },
       },
@@ -237,7 +238,7 @@ ${JSON.stringify(input)}`;
     required: ['title', 'paragraphs'],
   };
   const jsonHint =
-    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}], "summary": string, "characters": [{"name": string, "description": string}]}';
+    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}], "summary": string, "summary_en": string, "characters": [{"name": string, "description": string, "description_en": string}]}';
 
   const modelPath = model.startsWith('models/') ? model : `models/${model}`;
   // Models differ in which options they accept. Start with the full request and drop
@@ -332,9 +333,9 @@ export function mergeGlossary(glossary: GlossaryEntry[], add: GlossaryEntry[]): 
 }
 
 const ANALYZE_SYSTEM = `Bir romanın bölümlerini okuyup okuyucu için "hikâye defteri" tutuyorsun. Her bölüm için:
-- "summary": 2-4 cümlelik özet (ne oldu, kim ne yaptı). Sonraki bölümlerden bilgi ekleme.
-- "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin adı (bilinen karakterlerde listedeki adı aynen kullan). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa; yeni bilgi yoksa boş bırak.
-Bölümler İngilizce olsa bile "summary" ve "description" alanlarını MUTLAKA TÜRKÇE yaz; İngilizce cümle yazma. Yalnız özel adlar olduğu gibi kalabilir.
+- "summary": 2-4 cümlelik Türkçe özet (ne oldu, kim ne yaptı); "summary_en": aynı özetin İngilizcesi. Sonraki bölümlerden bilgi ekleme.
+- "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin adı (bilinen karakterlerde listedeki adı aynen kullan). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
+"summary" ve "description" her zaman Türkçe, "summary_en" ve "description_en" her zaman İngilizce olsun; bölümün dili ne olursa olsun.
 Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Summaries and character facts for chapters read before the notebook existed. */
@@ -360,11 +361,12 @@ ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.
           properties: {
             index: { type: 'INTEGER' },
             summary: { type: 'STRING' },
+            summary_en: { type: 'STRING' },
             characters: {
               type: 'ARRAY',
               items: {
                 type: 'OBJECT',
-                properties: { name: { type: 'STRING' }, description: { type: 'STRING' } },
+                properties: { name: { type: 'STRING' }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
                 required: ['name'],
               },
             },
@@ -375,7 +377,7 @@ ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.
     },
     required: ['chapters'],
   };
-  const hint = '\n\nYanıt biçimi: {"chapters": [{"index": number, "summary": string, "characters": [{"name": string, "description": string}]}]}';
+  const hint = '\n\nYanıt biçimi: {"chapters": [{"index": number, "summary": string, "summary_en": string, "characters": [{"name": string, "description": string, "description_en": string}]}]}';
   const modelPath = model.startsWith('models/') ? model : `models/${model}`;
   let r: any;
   for (let level = requestLevel.get(modelPath) ?? 0; ; level++) {
