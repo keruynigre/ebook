@@ -1,6 +1,7 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ChapterSheet } from '../../../components/ChapterSheet';
 import { ReaderParagraph, type WordTap } from '../../../components/ReaderParagraph';
 import { Button, ProgressBar } from '../../../components/ui';
 import { WordBubble, type BubbleTarget } from '../../../components/WordBubble';
@@ -73,6 +75,7 @@ export default function Reader() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFonts, setShowFonts] = useState(false);
   const [showVoices, setShowVoices] = useState(false);
+  const [showChapters, setShowChapters] = useState(false);
   const [bubble, setBubble] = useState<(BubbleTarget & { para: number }) | null>(null);
   const narr = useNarration();
   // Paragraph positions inside the scroll content, for auto-scroll and "start here".
@@ -291,6 +294,9 @@ export default function Reader() {
           contentStyle: { backgroundColor: theme.bg },
           headerRight: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
+                <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>
+              </Pressable>
               <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
                 <Text style={{ color: theme.text, fontSize: 20 }}>{highlightOn && narr.status !== 'paused' ? '⏸' : '🎧'}</Text>
               </Pressable>
@@ -534,6 +540,38 @@ export default function Reader() {
           </View>
         )}
       </ScrollView>
+
+      {book && (
+        <ChapterSheet
+          visible={showChapters}
+          book={book}
+          current={i}
+          onClose={() => setShowChapters(false)}
+          onOpen={(k) => {
+            if (has(k)) {
+              setShowChapters(false);
+              if (k !== i) go(k);
+              return;
+            }
+            Alert.alert(`${k + 1}. bölüm indirilmemiş`, 'Şimdi indirilsin mi?', [
+              { text: 'Vazgeç', style: 'cancel' },
+              { text: 'İndir', onPress: () => startDownload(id, [k], { translate: settings.autoTranslate }).catch(() => undefined) },
+            ]);
+          }}
+          footer={
+            <View style={{ padding: 12 }}>
+              <Button
+                variant="secondary"
+                title="📓 Hikâye defteri"
+                onPress={() => {
+                  setShowChapters(false);
+                  router.push({ pathname: '/notebook/[id]', params: { id } });
+                }}
+              />
+            </View>
+          }
+        />
+      )}
 
       <WordBubble
         target={bubble}

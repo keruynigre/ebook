@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
+import { emptyNotebook, findCharacter, mergeChapterInfo } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -284,6 +285,42 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(parseTdk('x', { error: 'Sonuç bulunamadı' }), null);
     assert.deepEqual(turkishStems('Köylüler').slice(0, 4), ['köylüler', 'köylüle', 'köylül', 'köylü']);
     assert.equal(turkishStems('Xiaochun’du')[0], 'xiaochun');
+  });
+
+  await test('story notebook merging', () => {
+    let nb = mergeChapterInfo(emptyNotebook(), 0, {
+      summary: 'Bai Xiaochun köyden ayrılır.',
+      characters: [{ name: 'Bai Xiaochun', description: 'On beş yaşında, zayıf, yeşil cübbeli bir genç.' }],
+    });
+    nb = mergeChapterInfo(nb, 1, {
+      summary: 'Tarikata varır.',
+      characters: [
+        { name: 'Xiaochun', description: 'Ölümden çok korkar.' },
+        { name: 'Li Qinghou', description: 'Tarikatın yaşlı ustası.' },
+      ],
+    });
+    // Re-processing chapter 1 replaces its note instead of piling up.
+    nb = mergeChapterInfo(nb, 1, { characters: [{ name: 'Bai Xiaochun', description: 'Ölümden ödü kopar.' }] });
+    assert.equal(nb.characters.length, 2);
+    const bai = nb.characters[findCharacter(nb.characters, 'xiaochun')];
+    assert.equal(bai.name, 'Bai Xiaochun');
+    assert.deepEqual(bai.aliases, ['Xiaochun']);
+    assert.deepEqual(bai.seenIn, [0, 1]);
+    assert.deepEqual(bai.notes.map((n) => n.chapter), [0, 1]);
+    assert.equal(bai.notes[1].text, 'Ölümden ödü kopar.');
+    assert.equal(nb.summaries['0'], 'Bai Xiaochun köyden ayrılır.');
+    assert.equal(nb.summaries['1'], 'Tarikata varır.');
+    assert.equal(findCharacter(nb.characters, 'Qinghou'), 1);
+    assert.equal(findCharacter(nb.characters, 'Bilinmeyen'), -1);
+  });
+
+  await test('translation carries notebook info', () => {
+    const r = parseTranslation(
+      JSON.stringify({ title: 'T', paragraphs: ['a'], summary: 'Özet', characters: [{ name: 'Ali', description: 'Uzun boylu' }, { name: '' }] }),
+      { title: 'T', paragraphs: ['x'] },
+    );
+    assert.equal(r.info.summary, 'Özet');
+    assert.deepEqual(r.info.characters, [{ name: 'Ali', description: 'Uzun boylu' }]);
   });
 
   await test('word locating and long paragraph splitting', () => {

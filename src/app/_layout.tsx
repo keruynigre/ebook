@@ -36,6 +36,7 @@ export default function RootLayout() {
           <Stack.Screen name="settings" options={{ title: 'Ayarlar' }} />
           <Stack.Screen name="book/[id]" options={{ title: '' }} />
           <Stack.Screen name="read/[id]/[index]" options={{ title: '' }} />
+          <Stack.Screen name="notebook/[id]" options={{ title: 'Hikâye defteri' }} />
         </Stack>
         <BrowserHost />
       </View>

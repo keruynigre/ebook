@@ -1,0 +1,193 @@
+/**
+ * Story notebook per book: characters, chapter summaries (and the glossary,
+ * which lives in glossary.json). Filled while translating, or on demand for
+ * chapters read earlier ("Güncelle"), never beyond the chapter asked for.
+ */
+import { useEffect, useState, useSyncExternalStore } from 'react';
+
+import { GeminiError, analyzeChapters } from './gemini';
+import { getBook } from './library';
+import { ModelPool } from './modelPool';
+import { emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { getGeminiKey, getSettings } from './settings';
+import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
+
+export type { Notebook } from './notebookCore';
+
+const cache = new Map<string, Notebook>();
+const listeners = new Set<() => void>();
+let version = 0;
+const emit = () => {
+  version++;
+  for (const l of listeners) l();
+};
+// Writes for a book run one after another so parallel translations don't lose updates.
+const queues = new Map<string, Promise<unknown>>();
+
+export async function loadNotebook(bookId: string): Promise<Notebook> {
+  const hit = cache.get(bookId);
+  if (hit) return hit;
+  const raw = (await loadNotebookFile(bookId)) as Notebook | null;
+  const nb = raw && Array.isArray(raw.characters) && raw.summaries ? raw : emptyNotebook();
+  cache.set(bookId, nb);
+  return nb;
+}
+
+function update(bookId: string, change: (nb: Notebook) => Notebook): Promise<void> {
+  const prev = queues.get(bookId) ?? Promise.resolve();
+  const next = prev
+    .catch(() => undefined)
+    .then(async () => {
+      const nb = change(await loadNotebook(bookId));
+      cache.set(bookId, nb);
+      await saveNotebookFile(bookId, nb);
+      emit();
+    });
+  queues.set(bookId, next);
+  return next;
+}
+
+export function recordChapterInfo(bookId: string, chapter: number, info: ChapterInfo): Promise<void> {
+  if (!info.summary && !info.characters.length) return Promise.resolve();
+  return update(bookId, (nb) => mergeChapterInfo(nb, chapter, info));
+}
+
+export function editNotebook(bookId: string, change: (nb: Notebook) => Notebook): Promise<void> {
+  return update(bookId, change);
+}
+
+/** The notebook of a book, re-rendering when it changes. */
+export function useNotebook(bookId: string): Notebook | null {
+  const v = useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => version,
+  );
+  const [nb, setNb] = useState<Notebook | null>(() => cache.get(bookId) ?? null);
+  useEffect(() => {
+    let alive = true;
+    loadNotebook(bookId).then((x) => alive && setNb(x));
+    return () => {
+      alive = false;
+    };
+  }, [bookId, v]);
+  return nb;
+}
+
+// ---- filling in chapters read earlier -------------------------------------
+
+export interface NotebookJob {
+  running: boolean;
+  done: number;
+  total: number;
+  message: string;
+  error?: string;
+}
+
+const jobs = new Map<string, NotebookJob>();
+const stopRequested = new Set<string>();
+const setJob = (id: string, j: NotebookJob) => {
+  jobs.set(id, j);
+  emit();
+};
+
+export function useNotebookJob(bookId: string): NotebookJob | undefined {
+  useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => version,
+  );
+  return jobs.get(bookId);
+}
+
+/** Downloaded chapters up to `upTo` (inclusive) that have no summary yet. */
+export function missingChapters(bookId: string, nb: Notebook, upTo: number): number[] {
+  const book = getBook(bookId);
+  if (!book) return [];
+  return book.downloaded.filter((i) => i <= upTo && !nb.summaries[String(i)]).sort((a, b) => a - b);
+}
+
+const BATCH_CHARS = 28_000;
+const BATCH_MAX = 5;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export function stopNotebookJob(bookId: string) {
+  stopRequested.add(bookId);
+}
+
+export async function fillNotebook(bookId: string, upTo: number): Promise<void> {
+  if (jobs.get(bookId)?.running) return;
+  stopRequested.delete(bookId);
+  const book = getBook(bookId);
+  const key = await getGeminiKey();
+  const settings = getSettings();
+  if (!book || !key || !settings.geminiModel) {
+    setJob(bookId, { running: false, done: 0, total: 0, message: '', error: 'Önce Ayarlar’dan Gemini anahtarı girin.' });
+    return;
+  }
+  const todo = missingChapters(bookId, await loadNotebook(bookId), upTo);
+  const job: NotebookJob = { running: true, done: 0, total: todo.length, message: 'Hazırlanıyor…' };
+  setJob(bookId, { ...job });
+  const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
+  let at = 0;
+  try {
+    while (at < todo.length) {
+      if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
+      // Next batch: a few chapters, Turkish text when there is one.
+      const batch: { index: number; title: string; paragraphs: string[] }[] = [];
+      let chars = 0;
+      while (at + batch.length < todo.length && batch.length < BATCH_MAX) {
+        const i = todo[at + batch.length];
+        const c = (book.translated?.includes(i) ? await loadTranslation(bookId, i) : null) ?? (await loadChapter(bookId, i));
+        if (!c) {
+          batch.push({ index: i, title: '', paragraphs: [] });
+          continue;
+        }
+        const len = c.paragraphs.reduce((n, p) => n + p.length, 0);
+        if (batch.length && chars + len > BATCH_CHARS) break;
+        chars += len;
+        batch.push({ index: i, title: c.title, paragraphs: c.paragraphs });
+      }
+      const usable = batch.filter((b) => b.paragraphs.length);
+      let results: { index: number; info: ChapterInfo }[] = [];
+      for (;;) {
+        if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
+        const choice = pool.pick();
+        if (!choice) throw new Error('Gemini’nin bugünkü kullanım hakkı doldu. Yarın kaldığı yerden devam edebilirsiniz.');
+        if ('waitMs' in choice) {
+          setJob(bookId, { ...job, message: `Gemini yoğun, ${Math.ceil(choice.waitMs / 1000)} sn bekleniyor` });
+          await sleep(Math.min(choice.waitMs, 15_000));
+          continue;
+        }
+        try {
+          setJob(bookId, { ...job, message: `${usable[0]?.index + 1}–${usable[usable.length - 1]?.index + 1}. bölümler okunuyor` });
+          const nb = await loadNotebook(bookId);
+          results = usable.length
+            ? await analyzeChapters(key, choice.model, usable, nb.characters.map((c) => c.name), book.title)
+            : [];
+          break;
+        } catch (e) {
+          if (!(e instanceof GeminiError)) throw e;
+          if (e.kind === 'busy' || e.kind === 'rate' || e.kind === 'daily') pool.report(choice.model, e.kind, e.retryAfterMs);
+          else if (e.kind === 'unsupported') pool.report(choice.model, 'daily');
+          else throw e;
+        }
+      }
+      for (const r of results.sort((a, b) => a.index - b.index)) {
+        // An empty summary still marks the chapter as done.
+        await update(bookId, (nb) => mergeChapterInfo(nb, r.index, { ...r.info, summary: r.info.summary || '—' }));
+      }
+      at += batch.length;
+      job.done = at;
+      setJob(bookId, { ...job });
+      await sleep(4_000); // stay under the free tier's per-minute limit
+    }
+    setJob(bookId, { running: false, done: job.done, total: job.total, message: `${job.done} bölüm deftere işlendi.` });
+  } catch (e) {
+    setJob(bookId, { running: false, done: job.done, total: job.total, message: '', error: (e as Error).message });
+  }
+}

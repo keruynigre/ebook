@@ -1,69 +1,17 @@
 import { Image } from 'expo-image';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ChapterSheet } from '../../components/ChapterSheet';
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import { cancelDownload, startDownload, useDownload } from '../../lib/downloads';
 import { refreshChapterList, removeBook, useBook } from '../../lib/library';
 import { useSettings } from '../../lib/settings';
 import { bookSize, coverFile, formatSize } from '../../lib/storage';
 import { colors } from '../../lib/theme';
-import type { Book, ChapterRef } from '../../lib/types';
-
-const ROW_H = 48;
-
-const ChapterRow = memo(function ChapterRow({
-  index,
-  chapter,
-  downloaded,
-  translated,
-  selecting,
-  selected,
-  highlighted,
-  onOpen,
-  onToggle,
-}: {
-  index: number;
-  chapter: ChapterRef;
-  downloaded: boolean;
-  translated: boolean;
-  selecting: boolean;
-  selected: boolean;
-  highlighted: boolean;
-  onOpen: (i: number) => void;
-  onToggle: (i: number) => void;
-}) {
-  return (
-    <Pressable
-      onPress={() => (selecting ? onToggle(index) : downloaded ? onOpen(index) : onToggle(index))}
-      onLongPress={() => onToggle(index)}
-      delayLongPress={300}
-      style={({ pressed }) => [
-        styles.chapter,
-        highlighted && { backgroundColor: '#3a2f1a' },
-        selected && { backgroundColor: '#2a2317' },
-        pressed && { opacity: 0.7 },
-      ]}
-    >
-      {selecting ? (
-        <Text style={[styles.chapterMark, { color: selected ? colors.accent : colors.muted, fontSize: 16 }]}>
-          {selected ? '☑' : '☐'}
-        </Text>
-      ) : (
-        <Text style={[styles.chapterMark, { color: downloaded ? colors.success : colors.border }]}>
-          {downloaded ? '●' : '○'}
-        </Text>
-      )}
-      <Text style={styles.chapterNo}>{index + 1}</Text>
-      <Text style={[ui.text, { flex: 1, color: downloaded ? colors.text : colors.muted }]} numberOfLines={1}>
-        {chapter.title}
-      </Text>
-      {translated && <Text style={styles.trBadge}>TR</Text>}
-    </Pressable>
-  );
-});
+import type { Book } from '../../lib/types';
 
 function firstMissing(book: Book): number {
   const have = new Set(book.downloaded);
@@ -84,10 +32,7 @@ export default function BookScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
-  const [jumpText, setJumpText] = useState('');
-  const [highlight, setHighlight] = useState<number | null>(null);
-  const listRef = useRef<FlatList<ChapterRef>>(null);
-  const headerHeight = useRef(0);
+  const [showChapters, setShowChapters] = useState(false);
   const selecting = selected.size > 0;
 
   const toggle = useCallback((i: number) => {
@@ -100,11 +45,13 @@ export default function BookScreen() {
   }, []);
 
   const downloaded = useMemo(() => new Set(book?.downloaded ?? []), [book?.downloaded]);
-  const translatedSet = useMemo(() => new Set(book?.translated ?? []), [book?.translated]);
   const settings = useSettings();
 
   const openChapter = useCallback(
-    (index: number) => router.push({ pathname: '/read/[id]/[index]', params: { id, index: String(index) } }),
+    (index: number) => {
+      setShowChapters(false);
+      router.push({ pathname: '/read/[id]/[index]', params: { id, index: String(index) } });
+    },
     [id],
   );
 
@@ -159,17 +106,6 @@ export default function BookScreen() {
     startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('Hata', (e as Error).message));
   };
 
-  const jumpTo = () => {
-    const n = parseInt(jumpText, 10);
-    if (!Number.isFinite(n) || n < 1 || n > total) {
-      Alert.alert('Bölüm numarası hatalı', `1 ile ${total} arasında bir sayı girin.`);
-      return;
-    }
-    Keyboard.dismiss();
-    setHighlight(n - 1);
-    listRef.current?.scrollToIndex({ index: n - 1, viewPosition: 0.3, animated: true });
-  };
-
   const onDownload = () => {
     const r = parseRange();
     if (r) doDownload(r[0], r[1]);
@@ -213,7 +149,7 @@ export default function BookScreen() {
   const readIndex = saved ?? (book.downloaded.length ? Math.min(...book.downloaded) : null);
 
   const header = (
-    <View style={{ gap: 14, marginBottom: 12 }} onLayout={(e) => (headerHeight.current = e.nativeEvent.layout.height)}>
+    <View style={{ gap: 14 }}>
       <View style={{ flexDirection: 'row', gap: 14 }}>
         {cover && <Image source={{ uri: cover.uri }} style={styles.cover} contentFit="cover" />}
         <View style={{ flex: 1, gap: 4 }}>
@@ -243,6 +179,15 @@ export default function BookScreen() {
         onPress={() => readIndex !== null && openChapter(readIndex)}
         disabled={readIndex === null}
       />
+      <View style={ui.row}>
+        <Button title={`📑 Bölümler · ${total}`} variant="secondary" onPress={() => setShowChapters(true)} style={{ flex: 1 }} />
+        <Button
+          title="📓 Hikâye defteri"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/notebook/[id]', params: { id: book.id } })}
+          style={{ flex: 1 }}
+        />
+      </View>
 
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>Bölüm aralığı</Text>
@@ -297,95 +242,54 @@ export default function BookScreen() {
         <Button small variant="secondary" title="Bölüm listesini güncelle" onPress={refresh} busy={refreshing} disabled={running} style={{ flex: 1 }} />
         <Button small variant="danger" title="Sil" onPress={remove} disabled={running} />
       </View>
-      <Text style={[ui.h2, { marginTop: 8, marginBottom: 0 }]}>Bölümler</Text>
-      <View style={ui.row}>
-        <TextInput
-          value={jumpText}
-          onChangeText={setJumpText}
-          placeholder={`Bölüme git (1–${total})`}
-          placeholderTextColor={colors.muted}
-          keyboardType="number-pad"
-          returnKeyType="go"
-          onSubmitEditing={jumpTo}
-          style={[ui.input, { flex: 1 }]}
-        />
-        <Button title="Git" onPress={jumpTo} disabled={!jumpText.trim()} />
-      </View>
-      <Text style={ui.muted}>
-        İndirilen bölüme dokunarak okuyun. Bir bölüme uzun basarak seçim yapın; seçtiklerinizi Türkçeye çevirebilir ya da
-        indirebilirsiniz.
-      </Text>
     </View>
   );
 
   return (
     <View style={ui.screen}>
       <Stack.Screen options={{ title: book.title }} />
-      <FlatList
-        ref={listRef}
-        data={book.chapters}
-        keyExtractor={(c, i) => `${i}:${c.url}`}
-        renderItem={({ item, index }) => (
-          <ChapterRow
-            index={index}
-            chapter={item}
-            downloaded={downloaded.has(index)}
-            translated={translatedSet.has(index)}
-            selecting={selecting}
-            selected={selected.has(index)}
-            highlighted={highlight === index}
-            onOpen={openChapter}
-            onToggle={toggle}
-          />
-        )}
-        extraData={[selected, highlight]}
-        getItemLayout={(_data, index) => ({ length: ROW_H, offset: 16 + headerHeight.current + 12 + ROW_H * index, index })}
-        onScrollToIndexFailed={(info) =>
-          listRef.current?.scrollToOffset({ offset: 16 + headerHeight.current + 12 + ROW_H * info.index, animated: true })
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 16 + insets.bottom }} keyboardShouldPersistTaps="handled">
+        {header}
+      </ScrollView>
+      <ChapterSheet
+        visible={showChapters}
+        book={book}
+        onClose={() => {
+          setShowChapters(false);
+          setSelected(new Set());
+        }}
+        onOpen={openChapter}
+        selected={selected}
+        onToggle={toggle}
+        footer={
+          selecting ? (
+            <View style={styles.selectBar}>
+              <View style={[ui.row, { justifyContent: 'space-between' }]}>
+                <Text style={ui.text}>{selected.size} bölüm seçildi</Text>
+                <Pressable onPress={() => setSelected(new Set())} hitSlop={10}>
+                  <Text style={{ color: colors.muted, fontWeight: '600' }}>Seçimi kaldır</Text>
+                </Pressable>
+              </View>
+              <View style={ui.row}>
+                <Button title="Türkçeye çevir" onPress={() => runSelected(true)} disabled={running} style={{ flex: 1 }} />
+                <Button title="İndir" variant="secondary" onPress={() => runSelected(false)} disabled={running} style={{ flex: 1 }} />
+              </View>
+              {running && <Text style={ui.muted}>Önceki işlem bitince seçilenleri başlatabilirsiniz.</Text>}
+            </View>
+          ) : (
+            <Text style={[ui.muted, { padding: 12 }]}>
+              İndirilen bölüme dokunarak okuyun; uzun basarak seçin, seçtiklerinizi çevirin ya da indirin.
+            </Text>
+          )
         }
-        ListHeaderComponent={header}
-        contentContainerStyle={{ padding: 16, paddingBottom: (selecting ? 110 : 16) + insets.bottom }}
-        initialNumToRender={30}
-        windowSize={10}
-        keyboardShouldPersistTaps="handled"
       />
-      {selecting && (
-        <View style={[styles.selectBar, { paddingBottom: 12 + insets.bottom }]}>
-          <View style={[ui.row, { justifyContent: 'space-between' }]}>
-            <Text style={ui.text}>{selected.size} bölüm seçildi</Text>
-            <Pressable onPress={() => setSelected(new Set())} hitSlop={10}>
-              <Text style={{ color: colors.muted, fontWeight: '600' }}>Seçimi kaldır</Text>
-            </Pressable>
-          </View>
-          <View style={ui.row}>
-            <Button title="Türkçeye çevir" onPress={() => runSelected(true)} disabled={running} style={{ flex: 1 }} />
-            <Button title="İndir" variant="secondary" onPress={() => runSelected(false)} disabled={running} style={{ flex: 1 }} />
-          </View>
-          {running && <Text style={ui.muted}>Önceki işlem bitince seçilenleri başlatabilirsiniz.</Text>}
-        </View>
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   cover: { width: 96, height: 138, borderRadius: 8, backgroundColor: colors.border },
-  chapter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    height: ROW_H,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  chapterMark: { fontSize: 12, width: 18, textAlign: 'center' },
-  chapterNo: { color: colors.muted, fontSize: 12, minWidth: 34, textAlign: 'right' },
   selectBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     gap: 10,
     padding: 12,
     backgroundColor: colors.card,

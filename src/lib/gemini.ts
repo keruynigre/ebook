@@ -1,3 +1,4 @@
+import { parseChapterInfo, type ChapterInfo } from './notebookCore';
 import type { ChapterContent } from './types';
 
 /**
@@ -140,6 +141,8 @@ export interface GlossaryEntry {
 export interface TranslationResult {
   chapter: ChapterContent;
   newTerms: GlossaryEntry[];
+  /** Summary and character facts for the story notebook. */
+  info: ChapterInfo;
 }
 
 /** The person's translation instructions (editable in Settings). */
@@ -170,6 +173,8 @@ const APP_RULES = `Uygulama kuralları (yanıtın okunabilmesi için zorunlu):
 - Karakter ve yer adlarını kitap boyunca aynı yaz; sözlükte verilen terimleri her zaman sözlükteki karşılığıyla kullan.
 - Çeviri sonuna eklenecek notları paragrafların içine değil "notes" listesine yaz (her not kısa bir cümle). Not yoksa boş liste ver.
 - Bu bölümde ilk kez geçen ve tutarlı çevrilmesi gereken özel terimleri (unvanlar, teknik adları, seviye adları, eşya adları) "newTerms" listesine ekle. Kişi adlarını ekleme.
+- "summary": bölümün 2-4 cümlelik Türkçe özeti (ne oldu, kim ne yaptı).
+- "characters": bu bölümde görünen ya da konuşan önemli karakterler. "name": çeviride kullandığın ad. "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler) kısa ve Türkçe; yeni bilgi yoksa boş bırak.
 - Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Translates one chapter to Turkish. `glossary` keeps terms consistent across chapters. */
@@ -215,11 +220,20 @@ ${JSON.stringify(input)}`;
           required: ['source', 'target'],
         },
       },
+      summary: { type: 'STRING' },
+      characters: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: { name: { type: 'STRING' }, description: { type: 'STRING' } },
+          required: ['name'],
+        },
+      },
     },
     required: ['title', 'paragraphs'],
   };
   const jsonHint =
-    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}]}';
+    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}], "summary": string, "characters": [{"name": string, "description": string}]}';
 
   const modelPath = model.startsWith('models/') ? model : `models/${model}`;
   // Models differ in which options they accept. Start with the full request and drop
@@ -296,6 +310,7 @@ export function parseTranslation(text: string, original: ChapterContent, finishR
   return {
     chapter: notes.length ? { title, paragraphs, notes } : { title, paragraphs },
     newTerms,
+    info: parseChapterInfo(data),
   };
 }
 
@@ -310,4 +325,87 @@ export function mergeGlossary(glossary: GlossaryEntry[], add: GlossaryEntry[]): 
     out.push(t);
   }
   return out;
+}
+
+const ANALYZE_SYSTEM = `Bir romanın bölümlerini okuyup okuyucu için "hikâye defteri" tutuyorsun. Her bölüm için:
+- "summary": 2-4 cümlelik Türkçe özet (ne oldu, kim ne yaptı). Sonraki bölümlerden bilgi ekleme.
+- "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin adı (bilinen karakterlerde listedeki adı aynen kullan). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; yeni bilgi yoksa boş bırak.
+Yanıtı yalnızca istenen JSON biçiminde ver.`;
+
+/** Summaries and character facts for chapters read before the notebook existed. */
+export async function analyzeChapters(
+  key: string,
+  model: string,
+  chapters: { index: number; title: string; paragraphs: string[] }[],
+  knownCharacters: string[],
+  bookTitle: string,
+): Promise<{ index: number; info: ChapterInfo }[]> {
+  const prompt = `Roman: ${bookTitle}
+Bilinen karakterler: ${knownCharacters.slice(0, 150).join(', ') || '(henüz yok)'}
+
+Bölümler (JSON):
+${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.paragraphs.join('\n') })))}`;
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      chapters: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            index: { type: 'INTEGER' },
+            summary: { type: 'STRING' },
+            characters: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: { name: { type: 'STRING' }, description: { type: 'STRING' } },
+                required: ['name'],
+              },
+            },
+          },
+          required: ['index', 'summary'],
+        },
+      },
+    },
+    required: ['chapters'],
+  };
+  const hint = '\n\nYanıt biçimi: {"chapters": [{"index": number, "summary": string, "characters": [{"name": string, "description": string}]}]}';
+  const modelPath = model.startsWith('models/') ? model : `models/${model}`;
+  let r: any;
+  for (let level = requestLevel.get(modelPath) ?? 0; ; level++) {
+    if (level >= REQUEST_LEVELS.length) throw new GeminiError(`${modelPath.replace(/^models\//, '')} bu isteği desteklemiyor.`, 'unsupported');
+    const o = REQUEST_LEVELS[level];
+    const generationConfig: Record<string, unknown> = { temperature: 0.3 };
+    if (o.json) generationConfig.responseMimeType = 'application/json';
+    if (o.schema) generationConfig.responseSchema = schema;
+    if (o.noThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    const body: Record<string, unknown> = {
+      contents: [{ role: 'user', parts: [{ text: (o.system ? prompt : `${ANALYZE_SYSTEM}\n\n---\n\n${prompt}`) + (o.schema ? '' : hint) }] }],
+      generationConfig,
+    };
+    if (o.system) body.systemInstruction = { parts: [{ text: ANALYZE_SYSTEM }] };
+    try {
+      r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
+      requestLevel.set(modelPath, level);
+      break;
+    } catch (e) {
+      if (e instanceof GeminiError && e.kind === 'invalid') continue;
+      throw e;
+    }
+  }
+  const text: string = (r?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
+  let data: any;
+  try {
+    const cleaned = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    const a = cleaned.indexOf('{');
+    const b = cleaned.lastIndexOf('}');
+    data = JSON.parse(a >= 0 && b > a ? cleaned.slice(a, b + 1) : cleaned);
+  } catch {
+    throw new GeminiError('Gemini anlaşılır bir yanıt döndürmedi.', 'other');
+  }
+  const wanted = new Set(chapters.map((c) => c.index));
+  return (Array.isArray(data?.chapters) ? data.chapters : [])
+    .filter((c: any) => Number.isInteger(c?.index) && wanted.has(c.index))
+    .map((c: any) => ({ index: c.index as number, info: parseChapterInfo(c) }));
 }

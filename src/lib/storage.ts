@@ -134,3 +134,19 @@ export function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
+
+export async function loadNotebookFile(id: string): Promise<unknown> {
+  const f = new File(bookDir(id), 'notebook.json');
+  if (!f.exists) return null;
+  try {
+    return JSON.parse(await f.text());
+  } catch {
+    return null;
+  }
+}
+
+export async function saveNotebookFile(id: string, data: unknown): Promise<void> {
+  const dir = bookDir(id);
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  await new File(dir, 'notebook.json').write(JSON.stringify(data));
+}
