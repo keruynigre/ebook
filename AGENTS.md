@@ -39,3 +39,13 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## Working with the owner (must follow)
+
+- Talk to the user in **Turkish**, short and clear. They work only from an Android phone (no computer).
+- Write times in **Turkey time (UTC+3)**.
+- Every push to `main` builds an APK (`.github/workflows/android.yml`, ~20–25 min) and publishes it under Releases as `v<version>-build.<run_number>`. A new push **cancels** the running build. After every push, schedule a check (`send_later`) and tell the user the Releases link when it finishes; if it fails, read the logs and fix. Docs-only commits may use `[skip ci]`.
+- Bump `version` in both `package.json` and `app.json` for each user-visible change. Commit messages in Turkish.
+- **Context rule:** when the conversation context gets large (long session, many builds/features), do not wait: open a new session (`create_session`, `source_url` https://github.com/keruynigre/ebook) with a detailed Turkish handoff note (current state, pending builds, user preferences, next steps, this rule), tell the user, then archive the old session (`archive_session`).
+- Be honest about what was not tested on the phone.
+- Environment traps: `npx expo install` needs `EXPO_OFFLINE=1`; docs.expo.dev unreachable (check `.d.ts` in node_modules); no Android SDK here (Kotlin compiles only in CI). Checks: `npx tsc --noEmit`, `npm test`, `EXPO_OFFLINE=1 npx expo lint`, `EXPO_OFFLINE=1 CI=1 npx expo export --platform android`.
