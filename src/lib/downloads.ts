@@ -141,13 +141,19 @@ export async function startDownload(bookId: string, indexes: number[], options: 
     });
   };
 
+  let lastProblem = '';
   const translateOne = async (index: number, content: ChapterContent): Promise<void> => {
     const startedAt = Date.now();
     let otherErrors = 0;
     for (;;) {
       if (cancelled.has(bookId)) throw new GeminiError('Durduruldu.', 'other');
       const choice = pool.pick();
-      if (!choice) throw new GeminiError('Bütün Gemini modellerinin günlük hakkı doldu. Yarın devam edebilirsiniz.', 'daily');
+      if (!choice) {
+        throw new GeminiError(
+          `Kullanılabilecek Gemini modeli kalmadı (günlük hak dolmuş ya da model bu isteği desteklemiyor).${lastProblem ? ` Son hata: ${lastProblem}` : ''}`,
+          'daily',
+        );
+      }
       if ('waitMs' in choice) {
         if (Date.now() - startedAt > MAX_TRANSLATE_WAIT_MS) {
           throw new GeminiError('Gemini modellerinin hepsi uzun süredir yoğun. Biraz sonra tekrar deneyin.', 'busy');
@@ -173,8 +179,14 @@ export async function startDownload(bookId: string, indexes: number[], options: 
         return;
       } catch (e) {
         if (!(e instanceof GeminiError)) throw e;
+        lastProblem = `${ModelPool.label(model)}: ${e.message}`;
         if (e.kind === 'busy' || e.kind === 'rate' || e.kind === 'daily') {
           pool.report(model, e.kind, e.retryAfterMs);
+          continue;
+        }
+        if (e.kind === 'unsupported') {
+          // This model can't do the job at all; use the others.
+          pool.report(model, 'daily');
           continue;
         }
         if (e.kind === 'other' && ++otherErrors < 2) continue;

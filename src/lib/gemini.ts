@@ -10,7 +10,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 export class GeminiError extends Error {
   constructor(
     message: string,
-    readonly kind: 'auth' | 'rate' | 'daily' | 'busy' | 'blocked' | 'other',
+    readonly kind: 'auth' | 'rate' | 'daily' | 'busy' | 'blocked' | 'invalid' | 'unsupported' | 'other',
     readonly retryAfterMs?: number,
   ) {
     super(message);
@@ -44,6 +44,15 @@ async function call<T>(key: string, path: string, init?: RequestInit): Promise<T
 
   const message: string = body?.error?.message ?? `HTTP ${res.status}`;
   if (res.status === 400 && /api key/i.test(message)) throw new GeminiError('API anahtarı geçersiz.', 'auth');
+  if (res.status === 400) {
+    // The model rejected part of the request (an option it does not support).
+    const detail = (body?.error?.details ?? [])
+      .flatMap((d: any) => d?.fieldViolations ?? [])
+      .map((v: any) => [v?.field, v?.description].filter(Boolean).join(': '))
+      .filter(Boolean)
+      .join('; ');
+    throw new GeminiError(`Gemini isteği kabul etmedi: ${message}${detail ? ` (${detail})` : ''}`, 'invalid');
+  }
   if (res.status === 401 || res.status === 403) throw new GeminiError(`API anahtarı reddedildi: ${message}`, 'auth');
   if (res.status === 429) {
     const details: any[] = body?.error?.details ?? [];
@@ -93,8 +102,17 @@ export async function listModels(key: string): Promise<GeminiModel[]> {
   return out.sort((a, b) => score(b) - score(a));
 }
 
-/** Models that answered "thinking can't be turned off". */
-const thinkingRequired = new Set<string>();
+/** Request shapes from richest to plainest; a model gets the first one it accepts. */
+const REQUEST_LEVELS = [
+  { noThinking: true, safety: true, schema: true, json: true, system: true },
+  { noThinking: false, safety: true, schema: true, json: true, system: true },
+  { noThinking: false, safety: false, schema: true, json: true, system: true },
+  { noThinking: false, safety: false, schema: false, json: true, system: true },
+  { noThinking: false, safety: false, schema: false, json: false, system: true },
+  { noThinking: false, safety: false, schema: false, json: false, system: false },
+];
+/** Index into REQUEST_LEVELS that last worked for each model. */
+const requestLevel = new Map<string, number>();
 
 export interface GlossaryEntry {
   source: string;
@@ -164,52 +182,63 @@ Aşağıdaki JSON'daki bölüm başlığını ve paragrafların tamamını Türk
 
 ${JSON.stringify(input)}`;
 
-  const body = {
-    systemInstruction: { parts: [{ text: `${instructions.trim() || DEFAULT_TRANSLATION_PROMPT}\n\n${APP_RULES}` }] },
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.4,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          title: { type: 'STRING' },
-          paragraphs: { type: 'ARRAY', items: { type: 'STRING' } },
-          notes: { type: 'ARRAY', items: { type: 'STRING' } },
-          newTerms: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: { source: { type: 'STRING' }, target: { type: 'STRING' } },
-              required: ['source', 'target'],
-            },
-          },
+  const system = `${instructions.trim() || DEFAULT_TRANSLATION_PROMPT}\n\n${APP_RULES}`;
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      title: { type: 'STRING' },
+      paragraphs: { type: 'ARRAY', items: { type: 'STRING' } },
+      notes: { type: 'ARRAY', items: { type: 'STRING' } },
+      newTerms: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: { source: { type: 'STRING' }, target: { type: 'STRING' } },
+          required: ['source', 'target'],
         },
-        required: ['title', 'paragraphs'],
       },
     },
-    safetySettings: [
-      'HARM_CATEGORY_HARASSMENT',
-      'HARM_CATEGORY_HATE_SPEECH',
-      'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-      'HARM_CATEGORY_DANGEROUS_CONTENT',
-    ].map((category) => ({ category, threshold: 'BLOCK_ONLY_HIGH' })),
+    required: ['title', 'paragraphs'],
   };
+  const jsonHint =
+    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}]}';
 
   const modelPath = model.startsWith('models/') ? model : `models/${model}`;
-  // Thinking makes answers much slower and adds nothing to a translation; turn it off
-  // where the model allows it, and remember the models that refuse.
+  // Models differ in which options they accept. Start with the full request and drop
+  // options one by one when the model rejects them; remember what worked per model.
   let r: any;
-  if (!thinkingRequired.has(modelPath)) {
+  for (let level = requestLevel.get(modelPath) ?? 0; ; level++) {
+    if (level >= REQUEST_LEVELS.length) {
+      throw new GeminiError(`${modelPath.replace(/^models\//, '')} bu çeviri isteğini desteklemiyor.`, 'unsupported');
+    }
+    const o = REQUEST_LEVELS[level];
+    const generationConfig: Record<string, unknown> = { temperature: 0.4 };
+    if (o.json) generationConfig.responseMimeType = 'application/json';
+    if (o.schema) generationConfig.responseSchema = schema;
+    if (o.noThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    const userText = (o.system ? prompt : `${system}\n\n---\n\n${prompt}`) + (o.schema ? '' : jsonHint);
+    const body: Record<string, unknown> = {
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig,
+    };
+    if (o.system) body.systemInstruction = { parts: [{ text: system }] };
+    if (o.safety) {
+      body.safetySettings = [
+        'HARM_CATEGORY_HARASSMENT',
+        'HARM_CATEGORY_HATE_SPEECH',
+        'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        'HARM_CATEGORY_DANGEROUS_CONTENT',
+      ].map((category) => ({ category, threshold: 'BLOCK_ONLY_HIGH' }));
+    }
     try {
-      const fast = { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: { thinkingBudget: 0 } } };
-      r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(fast) });
+      r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
+      requestLevel.set(modelPath, level);
+      break;
     } catch (e) {
-      if (!(e instanceof GeminiError && e.kind === 'other' && /thinking/i.test(e.message))) throw e;
-      thinkingRequired.add(modelPath);
+      if (e instanceof GeminiError && e.kind === 'invalid') continue;
+      throw e;
     }
   }
-  r ??= await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
   const cand = r?.candidates?.[0];
   if (!cand || cand.finishReason === 'SAFETY' || r?.promptFeedback?.blockReason) {
     throw new GeminiError('Gemini bu bölümü güvenlik filtresi nedeniyle çevirmedi.', 'blocked');
@@ -221,7 +250,10 @@ ${JSON.stringify(input)}`;
 export function parseTranslation(text: string, original: ChapterContent, finishReason?: string): TranslationResult {
   let data: any;
   try {
-    data = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    const cleaned = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    data = JSON.parse(start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned);
   } catch {
     if (finishReason === 'MAX_TOKENS') throw new GeminiError('Bölüm çok uzun, çeviri yarıda kesildi.', 'other');
     throw new GeminiError('Gemini anlaşılır bir çeviri döndürmedi.', 'other');

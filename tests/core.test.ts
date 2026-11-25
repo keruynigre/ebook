@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import JSZip from 'jszip';
 
 import { buildEpub, detectImageType } from '../src/lib/epub';
-import { mergeGlossary, parseTranslation } from '../src/lib/gemini';
+import { GeminiError, mergeGlossary, parseTranslation, translateChapter } from '../src/lib/gemini';
 import { ModelPool } from '../src/lib/modelPool';
 import { novelFull, parseChapterOptions, parseChapterPage, parseNovelPage } from '../src/lib/sources/novelfull';
 import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/generic';
@@ -176,6 +176,33 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     pool.report('models/a', 'daily');
     pool.report('models/c', 'daily');
     assert.equal(pool.pick(), null);
+  });
+
+  await test('gemini request falls back when a model rejects options', async () => {
+    const realFetch = globalThis.fetch;
+    const bodies: any[] = [];
+    const ok = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Tamam: {"title":"B1","paragraphs":["a","b"]}' }] } }] };
+    globalThis.fetch = (async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      bodies.push(body);
+      const rejected = body.generationConfig.thinkingConfig || body.safetySettings || body.generationConfig.responseSchema;
+      return new Response(JSON.stringify(rejected ? { error: { message: 'Request contains an invalid argument.' } } : ok), {
+        status: rejected ? 400 : 200,
+      });
+    }) as any;
+    try {
+      const orig = { title: 'C1', paragraphs: ['x', 'y'] };
+      const r = await translateChapter('k', 'models/test-a', orig, [], 'Book');
+      assert.deepEqual(r.chapter.paragraphs, ['a', 'b']);
+      assert.equal(bodies.length, 4);
+      // The next chapter starts with the shape that worked.
+      await translateChapter('k', 'models/test-a', orig, [], 'Book');
+      assert.equal(bodies.length, 5);
+      globalThis.fetch = (async () => new Response(JSON.stringify({ error: { message: 'bad' } }), { status: 400 })) as any;
+      await assert.rejects(translateChapter('k', 'models/test-b', orig, [], 'Book'), (e: unknown) => e instanceof GeminiError && e.kind === 'unsupported');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');
