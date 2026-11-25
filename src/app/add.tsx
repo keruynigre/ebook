@@ -6,6 +6,7 @@ import { KeyboardAvoidingView, ScrollView, Text, TextInput, View } from 'react-n
 
 import { Button, Card, ui } from '../components/ui';
 import { http } from '../lib/http';
+import { startDownload } from '../lib/downloads';
 import { addOrUpdateBook } from '../lib/library';
 import { sourceForUrl } from '../lib/sources';
 import { colors } from '../lib/theme';
@@ -63,6 +64,10 @@ export default function AddNovel() {
     setSaving(true);
     try {
       const book = await addOrUpdateBook(info);
+      // Download the whole book right away (runs in the background, can be stopped on the book page).
+      const have = new Set(book.downloaded);
+      const missing = book.chapters.map((_, i) => i).filter((i) => !have.has(i));
+      if (missing.length) startDownload(book.id, missing).catch(() => undefined);
       router.replace({ pathname: '/book/[id]', params: { id: book.id } });
     } catch (e) {
       setError((e as Error).message);

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChapterSheet } from '../../components/ChapterSheet';
@@ -11,13 +11,6 @@ import { refreshChapterList, removeBook, useBook } from '../../lib/library';
 import { useSettings } from '../../lib/settings';
 import { bookSize, coverFile, formatSize } from '../../lib/storage';
 import { colors } from '../../lib/theme';
-import type { Book } from '../../lib/types';
-
-function firstMissing(book: Book): number {
-  const have = new Set(book.downloaded);
-  for (let i = 0; i < book.chapters.length; i++) if (!have.has(i)) return i;
-  return book.chapters.length;
-}
 
 export default function BookScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,9 +19,6 @@ export default function BookScreen() {
   const insets = useSafeAreaInsets();
 
   const total = book?.chapters.length ?? 0;
-  const start = book ? Math.min(firstMissing(book), Math.max(0, total - 1)) : 0;
-  const [fromText, setFromText] = useState(String(start + 1));
-  const [toText, setToText] = useState(String(Math.min(start + 10, total)));
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -63,25 +53,9 @@ export default function BookScreen() {
     );
   }
 
-  const parseRange = (): [number, number] | null => {
-    const f = parseInt(fromText, 10);
-    const t = parseInt(toText, 10);
-    if (!Number.isFinite(f) || !Number.isFinite(t) || f < 1 || t < f || t > total) {
-      Alert.alert('Aralık hatalı', `1 ile ${total} arasında bir aralık girin.`);
-      return null;
-    }
-    return [f - 1, t - 1];
-  };
-
-  const setRange = (from: number, count: number | 'all') => {
-    const f = Math.min(from, total - 1);
-    setFromText(String(f + 1));
-    setToText(String(count === 'all' ? total : Math.min(f + count, total)));
-  };
-
-  const doDownload = (from: number, to: number, translate?: boolean) => {
-    const indexes = Array.from({ length: to - from + 1 }, (_, k) => from + k);
-    startDownload(book.id, indexes, { translate }).catch((e) => Alert.alert('İndirme hatası', (e as Error).message));
+  const missingAll = () => {
+    const have = new Set(book.downloaded);
+    return book.chapters.map((_, i) => i).filter((i) => !have.has(i));
   };
 
   const needsKey = () => {
@@ -93,10 +67,17 @@ export default function BookScreen() {
     return true;
   };
 
+  // Translate every untranslated chapter from the reading point to the end; stops by itself when the quota runs out.
   const onTranslate = () => {
     if (needsKey()) return;
-    const r = parseRange();
-    if (r) doDownload(r[0], r[1], true);
+    const from = book.progress?.index ?? 0;
+    const done = new Set(book.translated ?? []);
+    const indexes = book.chapters.map((_, i) => i).filter((i) => i >= from && !done.has(i));
+    if (!indexes.length) {
+      Alert.alert('Çevrilecek bölüm yok', 'Okuduğun yerden sonraki bütün bölümler zaten Türkçe.');
+      return;
+    }
+    startDownload(book.id, indexes, { translate: true }).catch((e) => Alert.alert('Çeviri hatası', (e as Error).message));
   };
 
   const runSelected = (translate: boolean) => {
@@ -107,8 +88,8 @@ export default function BookScreen() {
   };
 
   const onDownload = () => {
-    const r = parseRange();
-    if (r) doDownload(r[0], r[1]);
+    const indexes = missingAll();
+    if (indexes.length) startDownload(book.id, indexes).catch((e) => Alert.alert('İndirme hatası', (e as Error).message));
   };
 
   const refresh = async () => {
@@ -144,7 +125,6 @@ export default function BookScreen() {
   const cover = coverFile(book);
   const size = bookSize(book.id, `${book.updatedAt}:${book.downloaded.length}:${book.translated?.length ?? 0}`);
   const running = !!download?.running;
-  const next = firstMissing(book);
   const saved = book.progress && downloaded.has(book.progress.index) ? book.progress.index : null;
   const readIndex = saved ?? (book.downloaded.length ? Math.min(...book.downloaded) : null);
 
@@ -190,32 +170,25 @@ export default function BookScreen() {
       </View>
 
       <Card style={{ gap: 10 }}>
-        <Text style={ui.h2}>Bölüm aralığı</Text>
+        <Text style={ui.h2}>İndirme ve çeviri</Text>
+        <Text style={ui.text}>
+          {book.downloaded.length === total
+            ? `Bütün bölümler indirildi (${total}).`
+            : `${book.downloaded.length} / ${total} bölüm indirildi · ${total - book.downloaded.length} eksik`}
+        </Text>
         <View style={ui.row}>
-          <TextInput
-            value={fromText}
-            onChangeText={setFromText}
-            keyboardType="number-pad"
-            style={[ui.input, { flex: 1, textAlign: 'center' }]}
+          <Button
+            title={book.downloaded.length === total ? 'Hepsi indirildi ✓' : 'Tümünü indir'}
+            onPress={onDownload}
+            disabled={running || book.downloaded.length === total}
+            style={{ flex: 1 }}
           />
-          <Text style={ui.text}>–</Text>
-          <TextInput
-            value={toText}
-            onChangeText={setToText}
-            keyboardType="number-pad"
-            style={[ui.input, { flex: 1, textAlign: 'center' }]}
-          />
-          <Text style={ui.muted}>/ {total}</Text>
-        </View>
-        <View style={[ui.row, { flexWrap: 'wrap' }]}>
-          <Button small variant="secondary" title="Sonraki 10" onPress={() => setRange(next, 10)} />
-          <Button small variant="secondary" title="Sonraki 50" onPress={() => setRange(next, 50)} />
-          <Button small variant="secondary" title="Tümü" onPress={() => setRange(0, 'all')} />
-        </View>
-        <View style={ui.row}>
-          <Button title="İndir" onPress={onDownload} disabled={running} style={{ flex: 1 }} />
           <Button title="Türkçeye çevir" variant="secondary" onPress={onTranslate} disabled={running} style={{ flex: 1 }} />
         </View>
+        <Text style={ui.muted}>
+          “Türkçeye çevir” okuduğun bölümden itibaren çevrilmemiş bölümleri sırayla çevirir; Gemini’nin günlük hakkı bitince
+          durur, ertesi gün yeniden basınca kaldığı yerden sürer. Belirli bölümler için Bölümler penceresinde uzun basıp seçin.
+        </Text>
         {settings.autoTranslate && settings.hasGeminiKey && (
           <Text style={ui.muted}>Otomatik çeviri açık: “İndir” bölümleri Türkçeye de çevirir.</Text>
         )}

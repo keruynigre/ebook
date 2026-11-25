@@ -162,7 +162,7 @@ export function ChapterSheet({
             ref={tabsRef}
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
+            style={{ flexGrow: 0, flexShrink: 0 }}
             contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 10 }}
           >
             {Array.from({ length: blocks }, (_, b) => {
@@ -216,7 +216,16 @@ export function ChapterSheet({
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: colors.bg },
   head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 10, gap: 12 },
-  tab: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: colors.border, minWidth: 86, alignItems: 'center' },
+  tab: {
+    paddingHorizontal: 12,
+    height: 36,
+    justifyContent: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 92,
+    alignItems: 'center',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
