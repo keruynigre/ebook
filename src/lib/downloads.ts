@@ -8,6 +8,7 @@ import { getBook, putBook } from './library';
 import { getGeminiKey, getSettings, setSettings } from './settings';
 import { sourceById } from './sources';
 import { ModelPool } from './modelPool';
+import { refreshModelList } from './models';
 import { recordChapterInfo } from './notebook';
 import { loadChapter, loadGlossary, saveChapter, saveGlossary, saveTranslation } from './storage';
 import { sleep } from './text';
@@ -143,12 +144,20 @@ export async function startDownload(bookId: string, indexes: number[], options: 
   };
 
   let lastProblem = '';
+  let modelsRefreshed = false;
   const translateOne = async (index: number, content: ChapterContent): Promise<void> => {
     const startedAt = Date.now();
     let otherErrors = 0;
     for (;;) {
       if (cancelled.has(bookId)) throw new GeminiError('Durduruldu.', 'other');
-      const choice = pool.pick();
+      let choice = pool.pick();
+      if (!choice && !modelsRefreshed) {
+        // Every known model failed: maybe Google retired them. Ask for the current list once.
+        modelsRefreshed = true;
+        show('Gemini model listesi yenileniyor');
+        pool.addModels(await refreshModelList(key!).catch(() => []));
+        choice = pool.pick();
+      }
       if (!choice) {
         throw new GeminiError(
           `Kullanılabilecek Gemini modeli kalmadı (günlük hak dolmuş ya da model bu isteği desteklemiyor).${lastProblem ? ` Son hata: ${lastProblem}` : ''}`,

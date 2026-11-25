@@ -8,6 +8,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { GeminiError, analyzeChapters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
+import { refreshModelList } from './models';
 import { emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
@@ -134,6 +135,7 @@ export async function fillNotebook(bookId: string, upTo: number): Promise<void> 
   setJob(bookId, { ...job });
   const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
   let at = 0;
+  let modelsRefreshed = false;
   try {
     while (at < todo.length) {
       if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
@@ -156,7 +158,13 @@ export async function fillNotebook(bookId: string, upTo: number): Promise<void> 
       let results: { index: number; info: ChapterInfo }[] = [];
       for (;;) {
         if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
-        const choice = pool.pick();
+        let choice = pool.pick();
+        if (!choice && !modelsRefreshed) {
+          modelsRefreshed = true;
+          setJob(bookId, { ...job, message: 'Gemini model listesi yenileniyor' });
+          pool.addModels(await refreshModelList(key).catch(() => []));
+          choice = pool.pick();
+        }
         if (!choice) throw new Error('Gemini’nin bugünkü kullanım hakkı doldu. Yarın kaldığı yerden devam edebilirsiniz.');
         if ('waitMs' in choice) {
           setJob(bookId, { ...job, message: `Gemini yoğun, ${Math.ceil(choice.waitMs / 1000)} sn bekleniyor` });

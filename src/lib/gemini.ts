@@ -45,6 +45,10 @@ async function call<T>(key: string, path: string, init?: RequestInit): Promise<T
 
   const message: string = body?.error?.message ?? `HTTP ${res.status}`;
   if (res.status === 400 && /api key/i.test(message)) throw new GeminiError('API anahtarı geçersiz.', 'auth');
+  // Retired or unknown model ("no longer available to new users", 404): use another one.
+  if (res.status === 404 || /no longer available|not found|is not supported for generatecontent|deprecated|has been retired/i.test(message)) {
+    throw new GeminiError(`Model kullanılamıyor: ${message}`, 'unsupported');
+  }
   if (res.status === 400) {
     // The model rejected part of the request (an option it does not support).
     const detail = (body?.error?.details ?? [])
@@ -174,7 +178,7 @@ const APP_RULES = `Uygulama kuralları (yanıtın okunabilmesi için zorunlu):
 - Çeviri sonuna eklenecek notları paragrafların içine değil "notes" listesine yaz (her not kısa bir cümle). Not yoksa boş liste ver.
 - Bu bölümde ilk kez geçen ve tutarlı çevrilmesi gereken özel terimleri (unvanlar, teknik adları, seviye adları, eşya adları) "newTerms" listesine ekle. Kişi adlarını ekleme.
 - "summary": bölümün 2-4 cümlelik Türkçe özeti (ne oldu, kim ne yaptı).
-- "characters": bu bölümde görünen ya da konuşan önemli karakterler. "name": çeviride kullandığın ad. "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler) kısa ve Türkçe; yeni bilgi yoksa boş bırak.
+- "characters": bu bölümde görünen ya da konuşan önemli karakterler. "name": çeviride kullandığın ad. "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler); kısa ve MUTLAKA TÜRKÇE yaz, İngilizce yazma; yeni bilgi yoksa boş bırak.
 - Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Translates one chapter to Turkish. `glossary` keeps terms consistent across chapters. */
@@ -328,8 +332,9 @@ export function mergeGlossary(glossary: GlossaryEntry[], add: GlossaryEntry[]): 
 }
 
 const ANALYZE_SYSTEM = `Bir romanın bölümlerini okuyup okuyucu için "hikâye defteri" tutuyorsun. Her bölüm için:
-- "summary": 2-4 cümlelik Türkçe özet (ne oldu, kim ne yaptı). Sonraki bölümlerden bilgi ekleme.
-- "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin adı (bilinen karakterlerde listedeki adı aynen kullan). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; yeni bilgi yoksa boş bırak.
+- "summary": 2-4 cümlelik özet (ne oldu, kim ne yaptı). Sonraki bölümlerden bilgi ekleme.
+- "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin adı (bilinen karakterlerde listedeki adı aynen kullan). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa; yeni bilgi yoksa boş bırak.
+Bölümler İngilizce olsa bile "summary" ve "description" alanlarını MUTLAKA TÜRKÇE yaz; İngilizce cümle yazma. Yalnız özel adlar olduğu gibi kalabilir.
 Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Summaries and character facts for chapters read before the notebook existed. */

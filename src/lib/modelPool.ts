@@ -7,7 +7,7 @@
 export type ModelProblem = 'busy' | 'rate' | 'daily';
 
 export class ModelPool {
-  private readonly models: string[];
+  private models: string[];
   private readonly busyUntil = new Map<string, number>();
   private readonly exhausted = new Set<string>();
 
@@ -26,6 +26,11 @@ export class ModelPool {
       soonest = Math.min(soonest, until - t);
     }
     return soonest === Infinity ? null : { waitMs: soonest };
+  }
+
+  /** Add models discovered later (e.g. after the list was refreshed). */
+  addModels(models: string[]) {
+    for (const m of models) if (m && !this.models.includes(m)) this.models.push(m);
   }
 
   report(model: string, problem: ModelProblem, retryAfterMs?: number) {
