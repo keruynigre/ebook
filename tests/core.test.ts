@@ -6,6 +6,7 @@ import JSZip from 'jszip';
 
 import { buildEpub, detectImageType } from '../src/lib/epub';
 import { mergeGlossary, parseTranslation } from '../src/lib/gemini';
+import { ModelPool } from '../src/lib/modelPool';
 import { novelFull, parseChapterOptions, parseChapterPage, parseNovelPage } from '../src/lib/sources/novelfull';
 import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/generic';
 import { sourceForUrl } from '../src/lib/sources';
@@ -157,6 +158,24 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.throws(() => parseTranslation('not json', orig));
     const g = mergeGlossary([{ source: 'Qi', target: 'Çi' }], [{ source: 'qi', target: 'Ki' }, { source: 'Dao', target: 'Dao' }]);
     assert.deepEqual(g.map((x) => x.target), ['Çi', 'Dao']);
+  });
+
+  await test('model pool falls back to the next model', () => {
+    let t = 0;
+    const pool = new ModelPool('models/a', ['models/a', 'models/b', 'models/c'], () => t);
+    assert.deepEqual(pool.pick(), { model: 'models/a' });
+    pool.report('models/a', 'busy');
+    assert.deepEqual(pool.pick(), { model: 'models/b' });
+    pool.report('models/b', 'daily');
+    pool.report('models/c', 'rate', 10_000);
+    assert.deepEqual(pool.pick(), { waitMs: 10_000 });
+    t = 10_000;
+    assert.deepEqual(pool.pick(), { model: 'models/c' });
+    t = 60_000;
+    assert.deepEqual(pool.pick(), { model: 'models/a' });
+    pool.report('models/a', 'daily');
+    pool.report('models/c', 'daily');
+    assert.equal(pool.pick(), null);
   });
 
   console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

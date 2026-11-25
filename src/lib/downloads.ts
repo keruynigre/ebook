@@ -2,11 +2,12 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useSyncExternalStore } from 'react';
 
 import { startForeground, stopForeground, updateForeground } from './foreground';
-import { GeminiError, mergeGlossary, translateChapter } from './gemini';
+import { GeminiError, listModels, mergeGlossary, translateChapter } from './gemini';
 import { http } from './http';
 import { getBook, putBook } from './library';
-import { getGeminiKey, getSettings } from './settings';
+import { getGeminiKey, getSettings, setSettings } from './settings';
 import { sourceById } from './sources';
+import { ModelPool } from './modelPool';
 import { loadChapter, loadGlossary, saveChapter, saveGlossary, saveTranslation } from './storage';
 import { sleep } from './text';
 import type { ChapterContent } from './types';
@@ -61,11 +62,10 @@ const DELAY_MS = 1200;
 const JITTER_MS = 800;
 const RETRIES = 3;
 const MAX_CONSECUTIVE_FAILURES = 4;
-/** Gemini's free tier allows only a few requests a minute. */
-const MIN_TRANSLATE_GAP_MS = 6000;
-const RATE_RETRIES = 6;
-/** Overload retries: 15 s, 30 s, 60 s, 120 s, 120 s (about 6 minutes in all). */
-const BUSY_RETRIES = 5;
+/** With one chapter at a time (free tier), keep a small gap between Gemini requests. */
+const SINGLE_GAP_MS = 4000;
+/** Give up on a chapter after waiting this long for any model to be free. */
+const MAX_TRANSLATE_WAIT_MS = 8 * 60 * 1000;
 
 export interface JobOptions {
   /** Translate to Turkish too. Defaults to the "auto translate" setting. */
@@ -73,7 +73,9 @@ export interface JobOptions {
 }
 
 /**
- * Downloads (and optionally translates) the given chapter indexes one after another.
+ * Downloads (and optionally translates) the given chapter indexes.
+ * Downloads run one after another; translations run alongside them, several at a
+ * time if the settings allow, switching to another Gemini model when one is busy.
  * Finished work is skipped, so an interrupted job can simply be started again.
  */
 export async function startDownload(bookId: string, indexes: number[], options: JobOptions = {}): Promise<void> {
@@ -84,6 +86,7 @@ export async function startDownload(bookId: string, indexes: number[], options: 
   const settings = getSettings();
   const key = settings.hasGeminiKey ? await getGeminiKey() : null;
   let translate = (options.translate ?? settings.autoTranslate) && !!key && !!settings.geminiModel;
+  const concurrency = Math.min(4, Math.max(1, Math.round(settings.translateConcurrency || 1)));
 
   const have = new Set(book.downloaded);
   const haveTr = new Set(book.translated ?? []);
@@ -106,6 +109,24 @@ export async function startDownload(bookId: string, indexes: number[], options: 
   let consecutive = 0;
   let lastGemini = 0;
   let glossary = translate ? await loadGlossary(bookId) : [];
+  let fallbacks = settings.geminiModels ?? [];
+  if (translate && fallbacks.length === 0) {
+    // Older installs never saved the model list; fetch it once so fallback works.
+    try {
+      fallbacks = (await listModels(key!)).map((m) => m.name);
+      setSettings({ geminiModels: fallbacks });
+    } catch {
+      fallbacks = [];
+    }
+  }
+  const pool = new ModelPool(settings.geminiModel, fallbacks);
+  const inFlight = new Set<Promise<void>>();
+
+  const show = (phase: string) => {
+    state.phase = phase;
+    set(bookId, { ...state });
+    updateForeground(book.title, `${phase} · ${state.done + state.failed}/${todo.length}`, state.done + state.failed, todo.length);
+  };
 
   const persist = async () => {
     const latest = getBook(bookId);
@@ -121,12 +142,29 @@ export async function startDownload(bookId: string, indexes: number[], options: 
   };
 
   const translateOne = async (index: number, content: ChapterContent): Promise<void> => {
-    for (let attempt = 0; ; attempt++) {
-      const wait = lastGemini + MIN_TRANSLATE_GAP_MS - Date.now();
-      if (wait > 0) await sleep(wait);
+    const startedAt = Date.now();
+    let otherErrors = 0;
+    for (;;) {
+      if (cancelled.has(bookId)) throw new GeminiError('Durduruldu.', 'other');
+      const choice = pool.pick();
+      if (!choice) throw new GeminiError('Bütün Gemini modellerinin günlük hakkı doldu. Yarın devam edebilirsiniz.', 'daily');
+      if ('waitMs' in choice) {
+        if (Date.now() - startedAt > MAX_TRANSLATE_WAIT_MS) {
+          throw new GeminiError('Gemini modellerinin hepsi uzun süredir yoğun. Biraz sonra tekrar deneyin.', 'busy');
+        }
+        show(`Gemini yoğun, ${Math.ceil(choice.waitMs / 1000)} sn bekleniyor`);
+        await sleep(Math.min(choice.waitMs, 15_000));
+        continue;
+      }
+      const model = choice.model;
+      if (concurrency === 1) {
+        const wait = lastGemini + SINGLE_GAP_MS - Date.now();
+        if (wait > 0) await sleep(wait);
+      }
       lastGemini = Date.now();
       try {
-        const r = await translateChapter(key!, settings.geminiModel, content, glossary, book.title, settings.translationPrompt);
+        show(`Çevriliyor (${ModelPool.label(model)})`);
+        const r = await translateChapter(key!, model, content, glossary, book.title, settings.translationPrompt);
         await saveTranslation(bookId, index, r.chapter);
         if (r.newTerms.length) {
           glossary = mergeGlossary(glossary, r.newTerms);
@@ -134,29 +172,40 @@ export async function startDownload(bookId: string, indexes: number[], options: 
         }
         return;
       } catch (e) {
-        if (e instanceof GeminiError && e.kind === 'rate' && attempt < RATE_RETRIES) {
-          state.phase = 'Gemini sınırı, bekleniyor';
-          set(bookId, { ...state });
-          await sleep(Math.min(90_000, e.retryAfterMs ?? 20_000 * (attempt + 1)));
+        if (!(e instanceof GeminiError)) throw e;
+        if (e.kind === 'busy' || e.kind === 'rate' || e.kind === 'daily') {
+          pool.report(model, e.kind, e.retryAfterMs);
           continue;
         }
-        if (e instanceof GeminiError && e.kind === 'busy') {
-          if (attempt < BUSY_RETRIES) {
-            const waitMs = Math.min(120_000, 15_000 * 2 ** attempt);
-            state.phase = `Gemini yoğun, ${Math.round(waitMs / 1000)} sn sonra tekrar denenecek`;
-            set(bookId, { ...state });
-            await sleep(waitMs);
-            continue;
-          }
-          throw new GeminiError(
-            'Gemini uzun süredir çok yoğun. Biraz sonra tekrar deneyin ya da Ayarlar’dan başka bir model seçin.',
-            'busy',
-          );
-        }
-        if (e instanceof GeminiError && e.kind === 'other' && attempt < 1) continue;
+        if (e.kind === 'other' && ++otherErrors < 2) continue;
         throw e;
       }
     }
+  };
+
+  const startTranslation = (index: number, content: ChapterContent) => {
+    const task = (async () => {
+      try {
+        await translateOne(index, content);
+        haveTr.add(index);
+        state.translated++;
+      } catch (e) {
+        const err = e as GeminiError;
+        if (err.kind === 'daily' || err.kind === 'auth' || err.kind === 'busy') {
+          // Stop translating; downloads go on and translation can be resumed later.
+          translate = false;
+          state.translating = false;
+          state.translateError = err.message;
+        } else if (!cancelled.has(bookId)) {
+          state.translateError = `${book.chapters[index]?.title}: ${err.message}`;
+        }
+      }
+      state.done++;
+      await persist().catch(() => undefined);
+      set(bookId, { ...state });
+    })();
+    inFlight.add(task);
+    task.finally(() => inFlight.delete(task));
   };
 
   try {
@@ -173,9 +222,7 @@ export async function startDownload(bookId: string, indexes: number[], options: 
       let content: ChapterContent | null = have.has(index) ? await loadChapter(bookId, index) : null;
       let lastError = '';
       if (!content) {
-        state.phase = 'İndiriliyor';
-        set(bookId, { ...state });
-        updateForeground(book.title, `${n + 1} / ${todo.length}: ${ref.title}`, n, todo.length);
+        show('İndiriliyor');
         for (let attempt = 0; attempt < RETRIES && !content; attempt++) {
           if (attempt > 0) await sleep(2000 * attempt * attempt);
           try {
@@ -187,7 +234,7 @@ export async function startDownload(bookId: string, indexes: number[], options: 
             lastError = (e as Error).message;
           }
         }
-        if (n < todo.length - 1 || translate) await sleep(DELAY_MS + Math.random() * JITTER_MS);
+        if (n < todo.length - 1) await sleep(DELAY_MS + Math.random() * JITTER_MS);
       }
 
       if (!content) {
@@ -201,25 +248,12 @@ export async function startDownload(bookId: string, indexes: number[], options: 
       }
       consecutive = 0;
 
-      // 2) Translate, if asked and not done yet.
+      // 2) Translate alongside the next downloads, if asked and not done yet.
       if (translate && !haveTr.has(index)) {
-        state.phase = 'Çevriliyor';
-        set(bookId, { ...state });
-        updateForeground(book.title, `Çevriliyor ${n + 1} / ${todo.length}: ${ref.title}`, n, todo.length);
-        try {
-          await translateOne(index, content);
-          haveTr.add(index);
-          state.translated++;
-        } catch (e) {
-          const err = e as GeminiError;
-          if (err.kind === 'daily' || err.kind === 'auth' || err.kind === 'busy') {
-            // Keep downloading; translation can be resumed later.
-            translate = false;
-            state.translating = false;
-            state.translateError = err.message;
-          } else {
-            state.translateError = `${ref.title}: ${err.message}`;
-          }
+        while (inFlight.size >= concurrency) await Promise.race(inFlight);
+        if (translate && !cancelled.has(bookId)) {
+          startTranslation(index, content);
+          continue;
         }
       }
 
@@ -227,7 +261,9 @@ export async function startDownload(bookId: string, indexes: number[], options: 
       await persist();
       set(bookId, { ...state });
     }
+    while (inFlight.size > 0) await Promise.race(inFlight);
   } finally {
+    while (inFlight.size > 0) await Promise.race(inFlight).catch(() => undefined);
     await persist().catch(() => undefined);
     deactivateKeepAwake(tag).catch(() => undefined);
     stopForeground();

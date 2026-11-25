@@ -14,6 +14,10 @@ export interface ReaderSettings {
   autoTranslate: boolean;
   /** Gemini model name, e.g. "models/gemini-…-flash". */
   geminiModel: string;
+  /** Models this key can use, best first; tried in turn when one is busy. */
+  geminiModels: string[];
+  /** How many chapters are translated at the same time (1 for the free tier). */
+  translateConcurrency: number;
   /** Custom translation instructions; empty means the built-in default. */
   translationPrompt: string;
   /** Whether a Gemini key is saved (the key itself lives in secure storage). */
@@ -33,6 +37,8 @@ const DEFAULTS: ReaderSettings = {
   showTranslation: true,
   autoTranslate: false,
   geminiModel: '',
+  geminiModels: [],
+  translateConcurrency: 1,
   translationPrompt: '',
   hasGeminiKey: false,
 };

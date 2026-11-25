@@ -34,6 +34,8 @@ Yeni sürümler eskisinin üstüne kurulur; kitaplığınız silinmez.
 
 Çeviri, Ayarlar → **Çeviri talimatı** bölümündeki talimatla yapılır (varsayılan: tam metin sadakati ilkesine bağlı profesyonel mütercim-tercüman talimatı); talimatı oradan değiştirebilirsiniz. Belirsiz ifadeler için alternatifler bölüm sonunda "Çevirmen notları" olarak gösterilir. Unvanlar ve teknik adlar gibi terimler için her kitaba bir sözlük tutulur; böylece aynı terim kitap boyunca aynı karşılıkla çevrilir. Okurken **Aa** → **Dil** ile Türkçe ve orijinal arasında geçebilirsiniz. EPUB oluştururken dil sorulur.
 
+Seçilen model yoğunsa ("high demand") ya da günlük hakkı dolduysa uygulama sıradaki Gemini modeline kendiliğinden geçer. Yanıt hızlansın diye modellerin "düşünme" adımı kapatılır. Google AI Studio'da ödeme açıksa Ayarlar → **Aynı anda çevrilecek bölüm** ile 3–4 bölüm birlikte çevrilebilir.
+
 Ücretsiz katmanın günlük bir sınırı vardır. Sınır dolunca çeviri durur, indirme devam eder; ertesi gün **Türkçeye çevir** ile kalınan yerden sürdürülür. Anahtar telefonda şifreli saklanır ve yalnızca Google'a gönderilir.
 
 ### Desteklenen siteler

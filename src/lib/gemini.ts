@@ -93,6 +93,9 @@ export async function listModels(key: string): Promise<GeminiModel[]> {
   return out.sort((a, b) => score(b) - score(a));
 }
 
+/** Models that answered "thinking can't be turned off". */
+const thinkingRequired = new Set<string>();
+
 export interface GlossaryEntry {
   source: string;
   target: string;
@@ -194,7 +197,19 @@ ${JSON.stringify(input)}`;
   };
 
   const modelPath = model.startsWith('models/') ? model : `models/${model}`;
-  const r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
+  // Thinking makes answers much slower and adds nothing to a translation; turn it off
+  // where the model allows it, and remember the models that refuse.
+  let r: any;
+  if (!thinkingRequired.has(modelPath)) {
+    try {
+      const fast = { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: { thinkingBudget: 0 } } };
+      r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(fast) });
+    } catch (e) {
+      if (!(e instanceof GeminiError && e.kind === 'other' && /thinking/i.test(e.message))) throw e;
+      thinkingRequired.add(modelPath);
+    }
+  }
+  r ??= await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
   const cand = r?.candidates?.[0];
   if (!cand || cand.finishReason === 'SAFETY' || r?.promptFeedback?.blockReason) {
     throw new GeminiError('Gemini bu bölümü güvenlik filtresi nedeniyle çevirmedi.', 'blocked');

@@ -26,6 +26,7 @@ export default function SettingsScreen() {
       const list = await listModels(key);
       if (list.length === 0) throw new Error('Bu anahtarla kullanılabilen metin modeli bulunamadı.');
       setModels(list);
+      setSettings({ geminiModels: list.map((m) => m.name) });
       if (!settings.geminiModel || !list.some((m) => m.name === settings.geminiModel)) {
         setSettings({ geminiModel: list[0].name });
       }
@@ -111,8 +112,8 @@ export default function SettingsScreen() {
         <Card style={{ gap: 10 }}>
           <Text style={ui.h2}>Model</Text>
           <Text style={ui.muted}>
-            “Flash” modelleri hızlıdır ve ücretsiz kullanım hakkı vardır. Ücretsiz hak günde sınırlıdır; dolarsa çeviri
-            durur ve ertesi gün kaldığı yerden devam edebilirsiniz.
+            Seçtiğiniz model önce denenir. O model yoğunsa ya da günlük hakkı dolduysa uygulama listedeki sıradaki modele
+            kendiliğinden geçer. “Flash” modelleri hızlıdır ve ücretsiz kullanım hakkı vardır.
           </Text>
           {busy && !models && <Text style={ui.muted}>Modeller yükleniyor…</Text>}
           {models?.slice(0, 12).map((m) => {
@@ -137,6 +138,28 @@ export default function SettingsScreen() {
               </Pressable>
             );
           })}
+        </Card>
+      )}
+
+      {settings.hasGeminiKey && (
+        <Card style={{ gap: 10 }}>
+          <Text style={ui.h2}>Aynı anda çevrilecek bölüm</Text>
+          <Text style={ui.muted}>
+            Ücretsiz kullanımda 1 kalsın; Google dakikada çok az isteğe izin veriyor. Google AI Studio’da ödemeyi
+            açtıysanız 3–4 seçin, çeviri o kadar kat hızlanır (Flash ile bölüm başına maliyet çok düşüktür).
+          </Text>
+          <View style={ui.row}>
+            {[1, 2, 3, 4].map((n) => (
+              <Button
+                key={n}
+                small
+                title={String(n)}
+                variant={settings.translateConcurrency === n ? 'primary' : 'secondary'}
+                onPress={() => setSettings({ translateConcurrency: n })}
+                style={{ flex: 1 }}
+              />
+            ))}
+          </View>
         </Card>
       )}
 
