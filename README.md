@@ -21,7 +21,8 @@ Yeni sürümler eskisinin üstüne kurulur; kitaplığınız silinmez.
 1. Romanın ana sayfasını (bölüm listesinin olduğu sayfayı) tarayıcıda açın ve adresini kopyalayın.
 2. Uygulamada **+ Ekle** → **Yapıştır** → **Bul** → **Kitaplığa ekle**.
 3. Bölüm aralığını seçin (ör. 1–50) → **İndir**.
-4. **EPUB oluştur** → **Paylaş** (okuma uygulamanızı seçin), **Aç** ya da **Klasöre kaydet**.
+4. **Okumaya başla** ile kitabı uygulama içinde okuyun. Kaldığınız yer, yazı boyutu ve tema (Aa) hatırlanır.
+5. İsterseniz **EPUB oluştur** → **Paylaş** (okuma uygulamanızı seçin), **Aç** ya da **Klasöre kaydet**.
 
 İndirilen bölümler telefonda saklanır. İndirme yarıda kalırsa tekrar **İndir**'e basın; zaten indirilmiş bölümler atlanır.
 
@@ -45,7 +46,7 @@ npm test              # ayrıştırıcı ve EPUB testleri
 npx expo start        # geliştirme sunucusu
 ```
 
-- `src/app/`: ekranlar (Expo Router)
+- `src/app/`: ekranlar (Expo Router); `read/[id]/[index].tsx` uygulama içi okuyucu
 - `src/lib/sources/`: site ayrıştırıcıları (`novelfull.ts`, `generic.ts`)
 - `src/lib/epub.ts`: EPUB 3 oluşturucu
 - `src/lib/downloads.ts`: bölüm indirme kuyruğu

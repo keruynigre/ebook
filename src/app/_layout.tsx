@@ -6,11 +6,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { BrowserHost } from '../components/BrowserHost';
 import { refreshLibrary } from '../lib/library';
+import { loadSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
 
 export default function RootLayout() {
   useEffect(() => {
     refreshLibrary().catch(() => undefined);
+    loadSettings().catch(() => undefined);
   }, []);
 
   return (

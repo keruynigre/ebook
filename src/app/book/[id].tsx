@@ -205,6 +205,8 @@ export default function BookScreen() {
   const cover = coverFile(book);
   const running = !!download?.running;
   const next = firstMissing(book);
+  const saved = book.progress && downloaded.has(book.progress.index) ? book.progress.index : null;
+  const readIndex = saved ?? (book.downloaded.length ? Math.min(...book.downloaded) : null);
 
   const header = (
     <View style={{ gap: 14, marginBottom: 12 }}>
@@ -223,6 +225,18 @@ export default function BookScreen() {
           {book.description}
         </Text>
       )}
+
+      <Button
+        title={
+          readIndex === null
+            ? 'Okumak için önce bölüm indirin'
+            : saved !== null
+              ? `Okumaya devam et · ${saved + 1}. bölüm`
+              : `Okumaya başla · ${readIndex + 1}. bölüm`
+        }
+        onPress={() => readIndex !== null && openChapter(readIndex)}
+        disabled={readIndex === null}
+      />
 
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>Bölüm aralığı</Text>
@@ -278,7 +292,7 @@ export default function BookScreen() {
           </Text>
           <View style={ui.row}>
             <Button title="Paylaş" onPress={share} style={{ flex: 1 }} />
-            <Button title="Aç" variant="secondary" onPress={open} style={{ flex: 1 }} />
+            <Button title="Başka uygulamada aç" variant="secondary" onPress={open} style={{ flex: 1 }} />
           </View>
           <Button title="Klasöre kaydet" variant="secondary" onPress={save} />
         </Card>

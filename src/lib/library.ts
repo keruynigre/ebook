@@ -45,10 +45,21 @@ export function getBook(id: string): Book | undefined {
 
 /** Saves a book and updates every screen that shows it. */
 export async function putBook(book: Book): Promise<void> {
-  await storage.saveBook(book);
+  // Update memory first so quick successive changes build on each other.
   const i = books.findIndex((b) => b.id === book.id);
   books = i >= 0 ? books.map((b) => (b.id === book.id ? book : b)) : [book, ...books];
   emit();
+  await storage.saveBook(book);
+}
+
+/** Applies a change to the latest saved copy of a book. */
+export async function updateBook(id: string, change: (b: Book) => Book): Promise<void> {
+  const latest = getBook(id);
+  if (latest) await putBook(change(latest));
+}
+
+export async function saveProgress(id: string, index: number, position: number): Promise<void> {
+  await updateBook(id, (b) => ({ ...b, progress: { index, position, updatedAt: Date.now() } }));
 }
 
 export async function removeBook(id: string): Promise<void> {

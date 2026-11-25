@@ -71,14 +71,12 @@ export async function startDownload(bookId: string, indexes: number[]): Promise<
   const tag = `download-${bookId}`;
   await activateKeepAwakeAsync(tag).catch(() => undefined);
   let consecutive = 0;
-  let unsaved = 0;
 
   const persist = async () => {
     const latest = getBook(bookId);
     if (!latest) return;
     const merged = new Set([...latest.downloaded, ...have]);
     await putBook({ ...latest, downloaded: [...merged].sort((a, b) => a - b), updatedAt: Date.now() });
-    unsaved = 0;
   };
 
   try {
@@ -109,7 +107,8 @@ export async function startDownload(bookId: string, indexes: number[]): Promise<
         have.add(index);
         state.done++;
         consecutive = 0;
-        if (++unsaved >= 5) await persist();
+        // Save after every chapter so it can be read right away.
+        await persist();
       } else {
         state.failed++;
         if (++consecutive >= MAX_CONSECUTIVE_FAILURES) {
