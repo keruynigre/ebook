@@ -27,6 +27,8 @@ import {
 import { mp3Duration, trimMp3 } from '../src/lib/tts/mp3';
 import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
+import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
+import { tokenize } from '../src/lib/words';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -260,6 +262,28 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
       secMsGecV2(secMsGecInput(1800000000.7)),
       '99E54519B490BE5C-E162DB0977FBDCB9B86DD8148BF1BCDC3C0303176CE39852A42B415935C20654',
     );
+  });
+
+  await test('word bubble: tokens and dictionary parsing', () => {
+    const t = tokenize('“Adı Bai Xiaochun’du,” dedi. Well-known!');
+    assert.deepEqual(t.filter((x) => x.word).map((x) => x.text), ['Adı', 'Bai', 'Xiaochun’du', 'dedi', 'Well-known']);
+    assert.equal(t.map((x) => x.text).join(''), '“Adı Bai Xiaochun’du,” dedi. Well-known!');
+    const g = parseGoogleDictionary('village', [
+      [['köy', 'village', null, null, 10]],
+      [['noun', ['köy', 'kasaba'], [], 'village', 1]],
+      'en',
+    ]);
+    assert.equal(g?.translation, 'köy');
+    assert.deepEqual(g?.senses, [{ label: 'isim', items: ['köy', 'kasaba'] }]);
+    assert.equal(parseGoogleDictionary('xyz', [[['xyz', 'xyz']], null, 'en']), null);
+    const d = parseTdk('köylüler', [
+      { madde: 'köylü', anlamlarListe: [{ anlam: 'Köyde oturan kimse', ozelliklerListe: [{ tam_adi: 'isim' }] }] },
+    ]);
+    assert.equal(d?.headword, 'köylü');
+    assert.deepEqual(d?.senses, [{ label: 'isim', items: ['Köyde oturan kimse'] }]);
+    assert.equal(parseTdk('x', { error: 'Sonuç bulunamadı' }), null);
+    assert.deepEqual(turkishStems('Köylüler').slice(0, 4), ['köylüler', 'köylüle', 'köylül', 'köylü']);
+    assert.equal(turkishStems('Xiaochun’du')[0], 'xiaochun');
   });
 
   await test('word locating and long paragraph splitting', () => {

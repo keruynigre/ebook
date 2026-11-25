@@ -58,8 +58,20 @@ export async function updateBook(id: string, change: (b: Book) => Book): Promise
   if (latest) await putBook(change(latest));
 }
 
+/** Where the person left a chapter (0–1), 0 if never opened. */
+export function chapterPosition(id: string, index: number): number {
+  const b = getBook(id);
+  const p = b?.positions?.[index];
+  if (typeof p === 'number') return p;
+  return b?.progress && b.progress.index === index ? b.progress.position : 0;
+}
+
 export async function saveProgress(id: string, index: number, position: number): Promise<void> {
-  await updateBook(id, (b) => ({ ...b, progress: { index, position, updatedAt: Date.now() } }));
+  await updateBook(id, (b) => ({
+    ...b,
+    progress: { index, position, updatedAt: Date.now() },
+    positions: { ...b.positions, [index]: position },
+  }));
 }
 
 export async function removeBook(id: string): Promise<void> {

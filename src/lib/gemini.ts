@@ -69,6 +69,24 @@ async function call<T>(key: string, path: string, init?: RequestInit): Promise<T
   throw new GeminiError(`Gemini hatası: ${message}`, 'other');
 }
 
+/** Short meaning of a word as used in a sentence, in Turkish (for the reader's word bubble). */
+export async function explainWord(key: string, model: string, word: string, sentence: string): Promise<string> {
+  const modelPath = model.startsWith('models/') ? model : `models/${model}`;
+  const prompt =
+    `Cümle: "${sentence}"\n\nBu cümledeki "${word}" sözcüğünün buradaki anlamını Türkçe olarak en fazla iki kısa satırla açıkla. ` +
+    'Sözcük çekimliyse önce kökünü yaz (ör. "kök: …"). Özel isimse kim/ne olduğunu söyle. Başka bir şey yazma.';
+  const r = await call<any>(key, `${modelPath}:generateContent`, {
+    method: 'POST',
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 160 },
+    }),
+  });
+  const text: string = (r?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('').trim();
+  if (!text) throw new GeminiError('Gemini yanıt vermedi.', 'other');
+  return text;
+}
+
 /** Models this key can use for text generation, most suitable first. */
 export async function listModels(key: string): Promise<GeminiModel[]> {
   const out: GeminiModel[] = [];

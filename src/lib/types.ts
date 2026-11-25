@@ -41,6 +41,8 @@ export interface Book {
   translated?: number[];
   /** Where the person stopped reading: chapter index and scroll position (0–1). */
   progress?: { index: number; position: number; updatedAt: number };
+  /** Scroll position (0–1) per chapter index, so every chapter reopens where it was left. */
+  positions?: Record<number, number>;
   /** File name of the cover inside the book folder, if any. */
   coverFile?: string;
   addedAt: number;

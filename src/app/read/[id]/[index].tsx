@@ -1,5 +1,5 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ReaderParagraph, type WordTap } from '../../../components/ReaderParagraph';
 import { Button, ProgressBar } from '../../../components/ui';
+import { WordBubble, type BubbleTarget } from '../../../components/WordBubble';
 import { startDownload, useDownload } from '../../../lib/downloads';
-import { getBook, saveProgress, useBook } from '../../../lib/library';
+import { chapterPosition, saveProgress, useBook } from '../../../lib/library';
 import { READER_FONTS, type ReaderFont } from '../../../lib/fonts';
 import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../../../lib/settings';
 import { loadChapter, loadTranslation } from '../../../lib/storage';
@@ -36,6 +38,22 @@ import { VOICES, voiceName } from '../../../lib/tts/voices';
 
 const SAVE_EVERY_MS = 1500;
 const RATES = [0.75, 1, 1.15, 1.3, 1.5, 1.75, 2];
+const BUBBLE: Record<ReaderTheme, { card: string; text: string; muted: string; border: string }> = {
+  dark: { card: '#262a33', text: '#eef0f4', muted: '#9aa0ad', border: '#3a3f4b' },
+  sepia: { card: '#fbf5e6', text: '#3b2f1e', muted: '#7d6a4f', border: '#d9c9a6' },
+  light: { card: '#ffffff', text: '#1a1a1a', muted: '#6b6b6b', border: '#d6d6d6' },
+};
+
+/** The sentence around a character position, for context-aware meanings. */
+function sentenceAt(text: string, pos: number): string {
+  const before = text.slice(0, pos);
+  const startMatch = before.match(/.*[.!?…]["”’»)]*\s+/s);
+  const start = startMatch ? startMatch[0].length : 0;
+  const rest = text.slice(pos);
+  const endMatch = rest.match(/[.!?…]["”’»)]*(\s|$)/);
+  const end = endMatch ? pos + (endMatch.index ?? 0) + endMatch[0].length : text.length;
+  return text.slice(start, end).trim().slice(0, 400);
+}
 
 export default function Reader() {
   const { id, index } = useLocalSearchParams<{ id: string; index: string }>();
@@ -55,6 +73,7 @@ export default function Reader() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFonts, setShowFonts] = useState(false);
   const [showVoices, setShowVoices] = useState(false);
+  const [bubble, setBubble] = useState<(BubbleTarget & { para: number }) | null>(null);
   const narr = useNarration();
   // Paragraph positions inside the scroll content, for auto-scroll and "start here".
   const paraLayout = useRef<{ y: number; h: number }[]>([]);
@@ -79,8 +98,7 @@ export default function Reader() {
 
   useEffect(() => {
     let alive = true;
-    const saved = getBook(id)?.progress;
-    restoreTo.current = saved && saved.index === i ? saved.position : 0;
+    restoreTo.current = chapterPosition(id, i);
     position.current = restoreTo.current;
     setChapter(undefined);
     loadChapter(id, i)
@@ -177,21 +195,63 @@ export default function Reader() {
     const k = RATES.findIndex((r) => r >= settings.ttsRate - 0.001);
     setNarrationRate(RATES[(k + 1) % RATES.length]);
   };
+  const shownRef = useRef<{ c: ChapterContent | null | undefined; lang: 'tr' | 'en' }>({ c: null, lang: 'en' });
+  useEffect(() => {
+    shownRef.current = { c: shown, lang: shownLang };
+  }, [shown, shownLang]);
+  const onWord = useCallback((tap: WordTap) => {
+    const p = shownRef.current.c?.paragraphs[tap.para] ?? '';
+    setBubble({ word: tap.word, sentence: sentenceAt(p, tap.start), lang: shownRef.current.lang, x: tap.x, y: tap.y, para: tap.para });
+  }, []);
+  const onParaLayout = useCallback((k: number, e: { nativeEvent: { layout: { y: number; height: number } } }) => {
+    paraLayout.current[k] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height };
+  }, []);
+  const readFrom = (para: number) => {
+    setBubble(null);
+    if (!shown) return;
+    if (highlightOn) narrateFrom(para);
+    else startNarration(id, i, shown, shownLang, para);
+  };
+  const paraStyle = useMemo(
+    () => ({
+      ...(font.regular ? { fontFamily: font.regular } : null),
+      color: theme.text,
+      fontSize: settings.fontSize,
+      lineHeight: Math.round(settings.fontSize * settings.lineHeight),
+      marginBottom: Math.round(settings.fontSize * 0.75),
+    }),
+    [font.regular, theme.text, settings.fontSize, settings.lineHeight],
+  );
+  const centerStyle = useMemo(() => ({ ...paraStyle, textAlign: 'center' as const }), [paraStyle]);
+
   const chooseVoice = (voiceId: string, lang: 'tr' | 'en') => {
     setSettings(lang === 'tr' ? { ttsVoiceTr: voiceId } : { ttsVoiceEn: voiceId });
     setShowVoices(false);
     if (narrActive && narr.lang === lang) restartNarration();
   };
 
+  // Return to where this chapter was left, once its final text is laid out.
+  // Scroll events before that (layout, font loading) must not overwrite the saved spot.
+  const settledRef = useRef(false);
+  const restoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tryRestore = () => {
-    const target = restoreTo.current;
-    const { content, view } = sizes.current;
-    if (target === null || content <= view || !chapter) return;
-    scroll.current?.scrollTo({ y: target * (content - view), animated: false });
-    restoreTo.current = null;
+    if (restoreTo.current === null || !settledRef.current) return;
+    if (restoreTimer.current) clearTimeout(restoreTimer.current);
+    restoreTimer.current = setTimeout(() => {
+      const target = restoreTo.current;
+      const { content, view } = sizes.current;
+      if (target === null || view <= 0) return;
+      if (content > view && target > 0) scroll.current?.scrollTo({ y: target * (content - view), animated: false });
+      restoreTo.current = null;
+    }, 150);
   };
+  useEffect(() => {
+    settledRef.current = textSettled;
+    if (textSettled) tryRestore();
+  }, [textSettled, shown]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (restoreTo.current !== null) return;
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const range = contentSize.height - layoutMeasurement.height;
     position.current = range > 0 ? Math.min(1, Math.max(0, contentOffset.y / range)) : 0;
@@ -409,32 +469,17 @@ export default function Reader() {
         </Text>
         {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
         {shown?.paragraphs.map((p, k) => (
-          <Text
+          <ReaderParagraph
             key={k}
-            selectable
-            onLayout={(e) => {
-              paraLayout.current[k] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height };
-            }}
-            onPress={highlightOn ? () => narrateFrom(k) : undefined}
-            style={{
-              ...bodyFont,
-              color: theme.text,
-              fontSize: settings.fontSize,
-              lineHeight: Math.round(settings.fontSize * settings.lineHeight),
-              marginBottom: Math.round(settings.fontSize * 0.75),
-              textAlign: /^[*\s~=\-–—•·]{3,}$/.test(p) ? 'center' : 'left',
-            }}
-          >
-            {highlightOn && narr.para === k && narr.start >= 0 ? (
-              <>
-                {p.slice(0, narr.start)}
-                <Text style={{ backgroundColor: colors.accent + '66' }}>{p.slice(narr.start, narr.end)}</Text>
-                {p.slice(narr.end)}
-              </>
-            ) : (
-              p
-            )}
-          </Text>
+            index={k}
+            text={p}
+            style={/^[*\s~=\-–—•·]{3,}$/.test(p) ? centerStyle : paraStyle}
+            hlStart={highlightOn && narr.para === k ? narr.start : -1}
+            hlEnd={highlightOn && narr.para === k ? narr.end : -1}
+            hlColor={colors.accent + '66'}
+            onWord={onWord}
+            onLayout={onParaLayout}
+          />
         ))}
 
         {!!shown?.notes?.length && (
@@ -489,6 +534,13 @@ export default function Reader() {
           </View>
         )}
       </ScrollView>
+
+      <WordBubble
+        target={bubble}
+        palette={BUBBLE[settings.theme]}
+        onClose={() => setBubble(null)}
+        onReadHere={bubble ? () => readFrom(bubble.para) : undefined}
+      />
 
       {(narrActive || (narr.bookId === id && !!narr.message)) && (
         <View style={[styles.player, { backgroundColor: theme.bg, borderColor: theme.muted, paddingBottom: 8 + insets.bottom }]}>
