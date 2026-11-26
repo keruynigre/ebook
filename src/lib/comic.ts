@@ -6,6 +6,7 @@
  */
 import { File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as jpeg from 'jpeg-js';
 import { useSyncExternalStore } from 'react';
 
 import { CloudflareError, drawImage, drawWithRefs } from './cloudflare';
@@ -109,26 +110,110 @@ const REF_SIDE = 480;
 
 export const styleRefFile = () => new File(Paths.document, 'comic-style.jpg');
 
-/** Let the user pick a picture whose drawing style the panels should follow. */
-export async function chooseStyleImage(): Promise<boolean> {
-  const picked = await File.pickFileAsync({ mimeTypes: ['image/*'] });
-  if (picked.canceled || !picked.result) return false;
-  const first = await ImageManipulator.manipulate(picked.result.uri).renderAsync();
-  const scale = REF_SIDE / Math.max(first.width, first.height, 1);
+/** The style pictures chosen by the user (up to MAX_STYLE); they are joined side by side into comic-style.jpg. */
+export const MAX_STYLE = 3;
+const stylePartFile = (i: number) => new File(Paths.document, `comic-style-${i + 1}.jpg`);
+
+/** The chosen style pictures, in order. A single older comic-style.jpg becomes the first one. */
+export function styleParts(): File[] {
+  const parts: File[] = [];
+  for (let i = 0; i < MAX_STYLE; i++) {
+    const f = stylePartFile(i);
+    if (f.exists) parts.push(f);
+  }
+  if (!parts.length && styleRefFile().exists) {
+    styleRefFile().copy(stylePartFile(0));
+    parts.push(stylePartFile(0));
+  }
+  return parts;
+}
+
+async function shrink(uri: string, side: number): Promise<string> {
+  const first = await ImageManipulator.manipulate(uri).renderAsync();
+  const scale = side / Math.max(first.width, first.height, 1);
   const size = scale < 1 ? { width: Math.round(first.width * scale), height: Math.round(first.height * scale) } : { width: first.width, height: first.height };
-  const ref = await ImageManipulator.manipulate(picked.result.uri).resize(size).renderAsync();
-  const saved = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.85 });
-  const target = styleRefFile();
-  if (target.exists) target.delete();
-  new File(saved.uri).copy(target);
-  setSettings({ comicStyleRef: true, comicStyleVersion: (getSettings().comicStyleVersion ?? 0) + 1 });
+  const ref = await ImageManipulator.manipulate(uri).resize(size).renderAsync();
+  return (await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 })).uri;
+}
+
+/** Let the user add pictures whose drawing style the panels should follow (up to MAX_STYLE in all). */
+export async function chooseStyleImage(): Promise<boolean> {
+  const have = styleParts();
+  const room = MAX_STYLE - have.length;
+  if (room <= 0) throw new Error(`En fazla ${MAX_STYLE} tarz görseli seçilebilir; önce birini kaldırın.`);
+  const picked = await File.pickFileAsync({ mimeTypes: ['image/*'], multipleFiles: true });
+  if (picked.canceled || !picked.result?.length) return false;
+  let n = have.length;
+  for (const f of picked.result.slice(0, room)) {
+    const uri = await shrink(f.uri, REF_SIDE);
+    const target = stylePartFile(n++);
+    if (target.exists) target.delete();
+    new File(uri).copy(target);
+  }
+  await rebuildStyle();
   return true;
 }
 
+/** Remove one style picture (by its place in styleParts()). */
+export async function removeStyleImage(index: number) {
+  const parts = styleParts();
+  if (!parts[index]) return;
+  parts[index].delete();
+  // Close the gap so the files stay numbered 1, 2, 3.
+  for (let i = index + 1; i < parts.length; i++) parts[i].move(stylePartFile(i - 1));
+  await rebuildStyle();
+}
+
 export function clearStyleImage() {
+  for (let i = 0; i < MAX_STYLE; i++) if (stylePartFile(i).exists) stylePartFile(i).delete();
   const f = styleRefFile();
   if (f.exists) f.delete();
-  setSettings({ comicStyleRef: false });
+  setSettings({ comicStyleRef: false, comicStyleVersion: (getSettings().comicStyleVersion ?? 0) + 1 });
+}
+
+/** Join the style pictures side by side into one reference picture (FLUX.2 takes few references). */
+async function rebuildStyle() {
+  const parts = styleParts();
+  const target = styleRefFile();
+  if (!parts.length) return clearStyleImage();
+  if (target.exists) target.delete();
+  if (parts.length === 1) {
+    parts[0].copy(target);
+  } else {
+    const sizes = await Promise.all(parts.map(async (p) => ImageManipulator.manipulate(p.uri).renderAsync()));
+    const GAP = 4;
+    const sum = sizes.reduce((a, s) => a + s.width / Math.max(1, s.height), 0);
+    // Common height h so that the joined picture fits in REF_SIDE × REF_SIDE.
+    const h = Math.floor(Math.min(REF_SIDE, (REF_SIDE - GAP * (parts.length - 1)) / sum));
+    const widths = sizes.map((s) => Math.max(1, Math.round((s.width * h) / Math.max(1, s.height))));
+    const W = widths.reduce((a, b) => a + b, 0) + GAP * (parts.length - 1);
+    const pixels = new Uint8Array(W * h * 4).fill(255);
+    let x0 = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const ref = await ImageManipulator.manipulate(parts[i].uri).resize({ width: widths[i], height: h }).renderAsync();
+      const saved = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.95 });
+      const img = jpeg.decode(await new File(saved.uri).bytes(), { useTArray: true, formatAsRGBA: true });
+      const w = Math.min(img.width, widths[i]);
+      for (let y = 0; y < Math.min(img.height, h); y++) {
+        pixels.set(img.data.subarray(y * img.width * 4, (y * img.width + w) * 4), (y * W + x0) * 4);
+      }
+      x0 += widths[i] + GAP;
+    }
+    await target.write(encodeJpeg(W, h, pixels));
+  }
+  setSettings({ comicStyleRef: true, comicStyleVersion: (getSettings().comicStyleVersion ?? 0) + 1 });
+}
+
+/** jpeg-js's encoder ends with Buffer.from(), which React Native lacks: lend it a tiny stand-in. */
+function encodeJpeg(width: number, height: number, data: Uint8Array): Uint8Array {
+  const g = globalThis as { Buffer?: unknown };
+  const had = 'Buffer' in g;
+  if (!had) g.Buffer = { from: (a: ArrayLike<number>) => Uint8Array.from(a) };
+  try {
+    return new Uint8Array(jpeg.encode({ width, height, data }, 88).data);
+  } finally {
+    if (!had) delete g.Buffer;
+  }
 }
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';

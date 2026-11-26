@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { listAccounts } from '../lib/cloudflare';
-import { chooseStyleImage, clearStyleImage, styleRefFile } from '../lib/comic';
+import { chooseStyleImage, clearStyleImage, MAX_STYLE, removeStyleImage, styleParts } from '../lib/comic';
 import { chapterCost, COMIC_COUNTS, panelRange, type ComicQuality } from '../lib/comicCore';
 import { setCfToken, setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
@@ -25,6 +25,19 @@ export function CloudflareCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
+  const [styleBusy, setStyleBusy] = useState(false);
+  // Re-read the files whenever the style changes (the version is bumped on every change).
+  const parts = useMemo(() => styleParts(), [settings.comicStyleVersion, settings.comicStyleRef]); // eslint-disable-line react-hooks/exhaustive-deps
+  const run = async (fn: () => Promise<unknown>) => {
+    setStyleBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      Alert.alert('Görsel eklenemedi', (e as Error).message);
+    } finally {
+      setStyleBusy(false);
+    }
+  };
 
   const save = async () => {
     const t = token.trim();
@@ -151,22 +164,33 @@ export function CloudflareCard() {
         tutup “Bölümün resimlerini baştan seç” diyebilirsin.
       </Text>
 
-      <Text style={[ui.text, { marginTop: 6 }]}>Tarz görseli</Text>
+      <Text style={[ui.text, { marginTop: 6 }]}>Tarz görselleri</Text>
       <Text style={ui.muted}>
-        Beğendiğin bir çizgi roman sayfası ya da çizim seçersen kareler o tarza benzer çizilir. Seçmezsen yazılı tarif
-        kullanılır.
+        Beğendiğin çizgi roman / manga sayfalarından en fazla {MAX_STYLE} tane seçersen kareler o tarza benzer çizilir.
+        Birden fazla seçersen yan yana tek resimde birleştirilir; böylece karakter kartlarına yer kalır. Seçmezsen yazılı
+        tarif kullanılır.
       </Text>
-      {settings.comicStyleRef && (
-        <Image source={{ uri: styleRefFile().uri }} style={{ width: 140, height: 140, borderRadius: 8 }} contentFit="cover" cachePolicy="none" />
+      {parts.length > 0 && (
+        <View style={[ui.row, { flexWrap: 'wrap' }]}>
+          {parts.map((p, i) => (
+            <View key={`${p.uri}-${settings.comicStyleVersion}`} style={{ alignItems: 'center', gap: 4 }}>
+              <Image source={{ uri: p.uri }} style={{ width: 96, height: 128, borderRadius: 8 }} contentFit="cover" cachePolicy="none" />
+              <Button small title="Kaldır" variant="danger" onPress={() => run(() => removeStyleImage(i))} />
+            </View>
+          ))}
+        </View>
       )}
       <View style={ui.row}>
-        <Button
-          title={settings.comicStyleRef ? 'Değiştir' : 'Görsel seç'}
-          variant="secondary"
-          onPress={() => chooseStyleImage().catch((e) => Alert.alert('Görsel seçilemedi', (e as Error).message))}
-          style={{ flex: 1 }}
-        />
-        {settings.comicStyleRef && <Button title="Kaldır" variant="danger" onPress={clearStyleImage} />}
+        {parts.length < MAX_STYLE && (
+          <Button
+            title={parts.length ? 'Görsel ekle' : 'Görsel seç'}
+            variant="secondary"
+            busy={styleBusy}
+            onPress={() => run(chooseStyleImage)}
+            style={{ flex: 1 }}
+          />
+        )}
+        {parts.length > 1 && <Button title="Tümünü kaldır" variant="danger" onPress={clearStyleImage} />}
       </View>
     </Card>
   );
