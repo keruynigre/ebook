@@ -1,4 +1,7 @@
 /** Cloudflare Workers AI: draws comic panels with FLUX. */
+import { File } from 'expo-file-system';
+
+import { multipartBody } from './multipart';
 import { fetchWithTimeout } from './text';
 
 const API = 'https://api.cloudflare.com/client/v4';
@@ -90,16 +93,18 @@ export async function drawWithRefs(
   size: { width: number; height: number },
   seed?: number,
 ): Promise<string> {
-  const form = new FormData();
-  form.append('prompt', prompt);
-  form.append('width', String(size.width));
-  form.append('height', String(size.height));
-  if (seed !== undefined) form.append('seed', String(seed));
-  refs.slice(0, 4).forEach((uri, k) => {
-    // React Native sends { uri, name, type } entries as file parts.
-    form.append(`input_image_${k}`, { uri, name: `ref${k}.jpg`, type: 'image/jpeg' } as unknown as Blob);
-  });
-  const r = await cf(token, `/accounts/${encodeURIComponent(accountId)}/ai/run/${FLUX2_MODEL}`, { method: 'POST', body: form });
+  const fields: [string, string][] = [
+    ['prompt', prompt],
+    ['width', String(size.width)],
+    ['height', String(size.height)],
+  ];
+  if (seed !== undefined) fields.push(['seed', String(seed)]);
+  const files = await Promise.all(
+    refs.slice(0, 4).map(async (uri, k) => ({ name: `input_image_${k}`, filename: `ref${k}.jpg`, data: await new File(uri).bytes() })),
+  );
+  // Built by hand: Expo's fetch does not accept React Native's { uri, name, type } form parts.
+  const { body, contentType } = multipartBody(fields, files);
+  const r = await cf(token, `/accounts/${encodeURIComponent(accountId)}/ai/run/${FLUX2_MODEL}`, { method: 'POST', body: body as unknown as BodyInit, headers: { 'Content-Type': contentType } });
   const image = r?.result?.image ?? r?.image;
   if (typeof image !== 'string' || image.length < 100) throw new CloudflareError('Cloudflare resim döndürmedi.', 'other');
   return image;

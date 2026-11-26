@@ -32,6 +32,7 @@ import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
 import { ZipWriter, crc32 } from '../src/lib/zipCore';
+import { multipartBody } from '../src/lib/multipart';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
 import { autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
@@ -597,6 +598,16 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.deepEqual(panelRange('high'), [6, 8]);
     assert.ok(chapterCost('saver', 10) > chapterCost('saver'));
     assert.ok(chapterCost('saver') < chapterCost('balanced') && chapterCost('balanced') < chapterCost('high'));
+  });
+
+  await test('multipart body', () => {
+    const { body, contentType } = multipartBody([['prompt', 'Wang Lin']], [{ name: 'input_image_0', filename: 'ref0.jpg', data: new Uint8Array([1, 2, 3]) }], 'XX');
+    assert.equal(contentType, 'multipart/form-data; boundary=XX');
+    const text = new TextDecoder('latin1').decode(body);
+    assert.equal(
+      text,
+      '--XX\r\nContent-Disposition: form-data; name="prompt"\r\n\r\nWang Lin\r\n--XX\r\nContent-Disposition: form-data; name="input_image_0"; filename="ref0.jpg"\r\nContent-Type: image/jpeg\r\n\r\n\x01\x02\x03\r\n--XX--\r\n',
+    );
   });
 
   await test('zip writer', async () => {
