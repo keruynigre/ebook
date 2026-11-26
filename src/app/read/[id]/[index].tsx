@@ -46,6 +46,10 @@ import { VOICES, voiceName } from '../../../lib/tts/voices';
 const SAVE_EVERY_MS = 1500;
 const LISTEN_ICON = require('../../../../assets/icons/listen.png');
 const COMIC_ICON = require('../../../../assets/icons/comic.png');
+const PLAY_ICON = require('../../../../assets/icons/play.png');
+const PAUSE_ICON = require('../../../../assets/icons/pause.png');
+const PREV_ICON = require('../../../../assets/icons/prev.png');
+const NEXT_ICON = require('../../../../assets/icons/next.png');
 /** Height of the top bar (chapter number, listen, Aa). */
 const BAR_H = 52;
 const RATES = [0.75, 1, 1.15, 1.3, 1.5, 1.75, 2];
@@ -574,7 +578,7 @@ export default function Reader() {
                 </Pressable>
                 <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
                   {highlightOn && narr.status !== 'paused' ? (
-                    <Text style={{ color: theme.text, fontSize: 20 }}>⏸</Text>
+                    <Image source={PAUSE_ICON} style={{ width: 22, height: 22, tintColor: theme.text }} />
                   ) : (
                     <Image source={LISTEN_ICON} style={{ width: 26, height: 26, tintColor: theme.text }} />
                   )}
@@ -734,19 +738,20 @@ export default function Reader() {
           {narrActive && (
             <View style={styles.playerRow}>
               <Pressable onPress={() => skipParagraph(-1)} hitSlop={8} style={styles.playerBtn}>
-                <Text style={[styles.playerIcon, { color: theme.text }]}>⏮</Text>
+                <Image source={PREV_ICON} style={[styles.playerImg, { tintColor: theme.text }]} />
               </Pressable>
               <Pressable
                 onPress={() => (narr.status === 'playing' || narr.status === 'loading' ? pauseNarration() : resumeNarration())}
                 hitSlop={8}
                 style={[styles.playerBtn, styles.playerMain]}
               >
-                <Text style={[styles.playerIcon, { color: colors.accentText }]}>
-                  {narr.status === 'playing' || narr.status === 'loading' ? '⏸' : '▶'}
-                </Text>
+                <Image
+                  source={narr.status === 'playing' || narr.status === 'loading' ? PAUSE_ICON : PLAY_ICON}
+                  style={[styles.playerImg, { tintColor: colors.accentText }]}
+                />
               </Pressable>
               <Pressable onPress={() => skipParagraph(1)} hitSlop={8} style={styles.playerBtn}>
-                <Text style={[styles.playerIcon, { color: theme.text }]}>⏭</Text>
+                <Image source={NEXT_ICON} style={[styles.playerImg, { tintColor: theme.text }]} />
               </Pressable>
               <Pressable onPress={cycleRate} hitSlop={8} style={styles.playerBtn}>
                 <Text style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{settings.ttsRate}×</Text>
@@ -798,5 +803,6 @@ const styles = StyleSheet.create({
   playerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
   playerMain: { backgroundColor: colors.accent, width: 48, height: 48, borderRadius: 24 },
   playerIcon: { fontSize: 20 },
+  playerImg: { width: 22, height: 22 },
   swatch: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 2 },
 });
