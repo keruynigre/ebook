@@ -83,6 +83,9 @@ export default function Reader() {
   // Paragraph positions inside the scroll content, for auto-scroll and "start here".
   const paraLayout = useRef<{ y: number; h: number }[]>([]);
   const scrollY = useRef(0);
+  // The top bar hides while reading on (finger moving up) and comes back with one move down.
+  const [barHidden, setBarHidden] = useState(false);
+  const barTurn = useRef(0);
   const userScrollAt = useRef(0);
   const [translation, setTranslation] = useState<ChapterContent | null>(null);
   // Which chapter the loaded texts belong to (state lags one render behind the route).
@@ -289,7 +292,14 @@ export default function Reader() {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const range = contentSize.height - layoutMeasurement.height;
     position.current = range > 0 ? Math.min(1, Math.max(0, contentOffset.y / range)) : 0;
+    const dy = contentOffset.y - scrollY.current;
     scrollY.current = contentOffset.y;
+    if (Date.now() - userScrollAt.current < 3000 && dy !== 0) {
+      // Distance moved since the scroll last changed direction, so small jitters do nothing.
+      barTurn.current = Math.sign(dy) === Math.sign(barTurn.current) ? barTurn.current + dy : dy;
+      if (contentOffset.y < 40 || barTurn.current < -12) setBarHidden(false);
+      else if (barTurn.current > 30 && contentOffset.y > 80) setBarHidden(true);
+    }
     const p = Math.round(position.current * 100);
     if (p !== pct || scrollPct.index !== i) setScrollPct({ index: i, pct: p });
     if (!saveTimer.current) saveTimer.current = setTimeout(save, SAVE_EVERY_MS);
@@ -299,6 +309,7 @@ export default function Reader() {
   const has = (k: number) => !!book?.downloaded.includes(k);
   const go = (k: number) => {
     save();
+    setBarHidden(false);
     restoreTo.current = 0;
     router.setParams({ index: String(k) });
   };
@@ -337,9 +348,10 @@ export default function Reader() {
     setSettings({ fontSize: Math.min(30, Math.max(13, settings.fontSize + delta)) });
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+    <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: barHidden ? insets.top : 0 }}>
       <Stack.Screen
         options={{
+          headerShown: !barHidden,
           title: total ? `${i + 1} / ${total}` : '',
           headerStyle: { backgroundColor: theme.bg },
           headerTintColor: theme.text,
