@@ -7,7 +7,7 @@ import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
 import { editNotebook, fillNotebook, missingChapters, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
-import { normName, noteText, type NotebookCharacter } from '../../lib/notebookCore';
+import { displayName, normName, noteText, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
 import { colors } from '../../lib/theme';
@@ -45,7 +45,7 @@ export default function NotebookScreen() {
   const characters = useMemo(() => {
     const list = (nb?.characters ?? []).filter((c) => c.firstChapter <= upTo);
     const filtered = q
-      ? list.filter((c) => normName(c.name).includes(q) || c.aliases.some((a) => normName(a).includes(q)) || c.notes.some((n) => normName(noteText(n, lang)).includes(q)))
+      ? list.filter((c) => normName(c.name).includes(q) || normName(c.nameTr ?? '').includes(q) || c.aliases.some((a) => normName(a).includes(q)) || c.notes.some((n) => normName(noteText(n, lang)).includes(q)))
       : list;
     return filtered.sort((a, b) => b.seenIn.length - a.seenIn.length || a.firstChapter - b.firstChapter);
   }, [nb, q, upTo, lang]);
@@ -110,7 +110,7 @@ export default function NotebookScreen() {
     ]);
 
   const deleteCharacter = (c: NotebookCharacter) =>
-    Alert.alert(`${c.name} defterden silinsin mi?`, 'Yanlış ya da gereksiz bir kayıtsa silebilirsiniz.', [
+    Alert.alert(`${displayName(c, lang)} defterden silinsin mi?`, 'Yanlış ya da gereksiz bir kayıtsa silebilirsiniz.', [
       { text: 'Vazgeç', style: 'cancel' },
       {
         text: 'Sil',
@@ -200,7 +200,7 @@ export default function NotebookScreen() {
             return (
               <Pressable onPress={() => setOpen(expanded ? null : c.name)} onLongPress={() => deleteCharacter(c)} style={styles.item}>
                 <View style={[ui.row, { justifyContent: 'space-between' }]}>
-                  <Text style={styles.name}>{c.name}</Text>
+                  <Text style={styles.name}>{displayName(c, lang)}</Text>
                   <Text style={{ color: colors.muted }}>{expanded ? '▴' : '▾'}</Text>
                 </View>
                 {!!c.aliases.length && <Text style={ui.muted}>Diğer adları: {c.aliases.join(', ')}</Text>}

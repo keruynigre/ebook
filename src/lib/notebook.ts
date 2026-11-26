@@ -9,7 +9,7 @@ import { GeminiError, analyzeChapters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { chapterNeedsWork, chaptersWithCast, clearChapterNotes, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { chapterNeedsWork, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -29,8 +29,9 @@ export async function loadNotebook(bookId: string): Promise<Notebook> {
   const hit = cache.get(bookId);
   if (hit) return hit;
   const raw = (await loadNotebookFile(bookId)) as Notebook | null;
-  const nb = raw && Array.isArray(raw.characters) && raw.summaries ? raw : emptyNotebook();
+  const nb = raw && Array.isArray(raw.characters) && raw.summaries ? dropTurkishNames(raw) : emptyNotebook();
   cache.set(bookId, nb);
+  if (raw && nb !== raw) await saveNotebookFile(bookId, nb);
   return nb;
 }
 

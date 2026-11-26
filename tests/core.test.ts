@@ -32,7 +32,7 @@ import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
 import { cardPrompt, castNames, mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
-import { chapterNeedsWork, clearChapterNotes, emptyNotebook, findCharacter, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { chapterNeedsWork, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -481,6 +481,38 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(hdrs.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
     assert.match(sent[0], /Path:speech\.config/);
     assert.match(sent[1], /Path:ssml\r\n\r\n<speak .*AhmetNeural.*Merhaba dünya/);
+  });
+
+  await test('notebook names: original vs Turkish', () => {
+    assert.equal(isTurkishName("Tie Zhu'nun Babası"), true);
+    assert.equal(isTurkishName("Chu Yang'ın Ustası"), true);
+    assert.equal(isTurkishName("Tie Zhu's Father"), false);
+    assert.equal(isTurkishName('Lü Bu'), false);
+    assert.equal(isTurkishName("Chang'e"), false);
+    let nb = mergeChapterInfo(emptyNotebook(), 0, {
+      summary: 'x',
+      characters: [
+        { name: "Tie Zhu's Father", nameTr: "Tie Zhu'nun Babası", description: '' },
+        { name: 'Tie Zhu', nameTr: 'Tie Zhu', description: '' },
+      ],
+    });
+    assert.equal(nb.characters.length, 2, 'the son is not merged into the father');
+    assert.equal(displayName(nb.characters[0], 'tr'), "Tie Zhu'nun Babası");
+    assert.equal(displayName(nb.characters[0], 'en'), "Tie Zhu's Father");
+    assert.equal(findCharacter(nb.characters, "Tie Zhu'nun Babası"), 0);
+    const old = {
+      characters: [
+        { name: "Tie Zhu'nun Babası", aliases: ['Tie Zhu'], notes: [{ chapter: 1, text: 'a' }], firstChapter: 1, lastChapter: 1, seenIn: [1] },
+        { name: 'Wang Zhuo', aliases: [], notes: [{ chapter: 1, text: 'b' }, { chapter: 2, text: 'c' }], firstChapter: 1, lastChapter: 2, seenIn: [1, 2] },
+      ],
+      summaries: { '1': 'bir', '2': 'iki' },
+      summariesEn: { '1': 'one', '2': 'two' },
+    };
+    nb = dropTurkishNames(old);
+    assert.deepEqual(nb.characters.map((c) => c.name), ['Wang Zhuo']);
+    assert.deepEqual(nb.characters[0].notes.map((n) => n.chapter), [2]);
+    assert.deepEqual(Object.keys(nb.summaries), ['2']);
+    assert.equal(dropTurkishNames(nb), nb);
   });
 
   await test('comic quality presets', () => {

@@ -9,7 +9,10 @@ export interface CharacterNote {
 }
 
 export interface NotebookCharacter {
+  /** Original (pinyin) name, or a short English label for unnamed characters ("Tie Zhu's Father"). */
   name: string;
+  /** The same name as written in the Turkish text, when it differs ("Tie Zhu'nun Babası"). */
+  nameTr?: string;
   aliases: string[];
   /** What the story has revealed about them (looks, identity, abilities, relations), oldest first. */
   notes: CharacterNote[];
@@ -36,13 +39,39 @@ export interface Notebook {
 export interface ChapterInfo {
   summary?: string;
   summaryEn?: string;
-  characters: { name: string; description: string; descriptionEn?: string }[];
+  characters: { name: string; nameTr?: string; description: string; descriptionEn?: string }[];
 }
 
 export const emptyNotebook = (): Notebook => ({ characters: [], summaries: {}, summariesEn: {} });
 
 /** Rough check: text with no Turkish-only letters is taken as English (old notes stored one language only). */
 export const looksTurkish = (s: string) => /[çğıöşüÇĞİÖŞÜ]/.test(s) || s.trim().length < 25;
+
+/** A character's name in the reader's language. */
+export const displayName = (c: Pick<NotebookCharacter, 'name' | 'nameTr'>, lang: 'tr' | 'en') => (lang === 'tr' && c.nameTr) || c.name;
+
+/** Names written with Turkish suffixes or letters ("Tie Zhu'nun Babası"): saved by older versions in the wrong field. */
+export const isTurkishName = (s: string) => /[çğıöşÇĞİÖŞ]|['’](n?[ıiuü]n|[ıiuü]|[dt][ae]n?)(\s|$)/.test(s);
+
+/**
+ * Drops characters stored under a Turkish name and forgets the chapters they were
+ * seen in, so "Güncelle" processes those chapters again with proper names.
+ */
+export function dropTurkishNames(nb: Notebook): Notebook {
+  const bad = nb.characters.filter((c) => isTurkishName(c.name));
+  if (!bad.length) return nb;
+  const redo = new Set(bad.flatMap((c) => c.seenIn));
+  const keep = (rec: Record<string, string> | undefined) => Object.fromEntries(Object.entries(rec ?? {}).filter(([k]) => !redo.has(Number(k))));
+  return {
+    ...nb,
+    characters: nb.characters
+      .filter((c) => !isTurkishName(c.name))
+      .map((c) => ({ ...c, notes: c.notes.filter((n) => !redo.has(n.chapter)) })),
+    summaries: keep(nb.summaries),
+    summariesEn: keep(nb.summariesEn),
+    noCast: (nb.noCast ?? []).filter((k) => !redo.has(k)),
+  };
+}
 
 /** Text of a note in the reader's language, falling back to the other one. */
 export function noteText(n: CharacterNote, lang: 'tr' | 'en'): string {
@@ -93,7 +122,9 @@ const normText = (s: string) => normName(s);
 export function findCharacter(list: NotebookCharacter[], name: string): number {
   const n = normName(name);
   if (!n) return -1;
-  const exact = list.findIndex((c) => normName(c.name) === n || c.aliases.some((a) => normName(a) === n));
+  const exact = list.findIndex(
+    (c) => normName(c.name) === n || (!!c.nameTr && normName(c.nameTr) === n) || c.aliases.some((a) => normName(a) === n),
+  );
   if (exact >= 0) return exact;
   const words = n.split(' ');
   const partial: number[] = [];
@@ -101,7 +132,8 @@ export function findCharacter(list: NotebookCharacter[], name: string): number {
     const cw = normName(c.name).split(' ');
     const shorter = words.length <= cw.length ? words : cw;
     const longer = words.length <= cw.length ? cw : words;
-    if (shorter.length < longer.length && shorter.every((w) => w.length > 1 && longer.includes(w))) partial.push(k);
+    // "Zhuo" ~ "Wang Zhuo", but not "Tie Zhu" ~ "Tie Zhu's Father".
+    if (shorter.length < longer.length && longer.length - shorter.length === 1 && shorter.every((w) => w.length > 1 && longer.includes(w))) partial.push(k);
   });
   return partial.length === 1 ? partial[0] : -1;
 }
@@ -120,6 +152,8 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
       k = characters.length - 1;
     }
     const c = characters[k];
+    const nameTr = raw.nameTr?.trim();
+    if (nameTr && normName(nameTr) !== normName(name) && nameTr.length <= 60) c.nameTr = nameTr;
     // Prefer the fuller name as the display name and remember the other as an alias.
     if (normName(name) !== normName(c.name)) {
       if (name.split(/\s+/).length > c.name.split(/\s+/).length) {
@@ -159,6 +193,7 @@ export function parseChapterInfo(data: any): ChapterInfo {
         .map((c: any) => {
           const out: ChapterInfo['characters'][number] = {
             name: c.name.trim(),
+            ...(typeof c.name_tr === 'string' && c.name_tr.trim() ? { nameTr: c.name_tr.trim() } : null),
             description: typeof c.description === 'string' ? c.description.trim() : '',
           };
           if (typeof c.description_en === 'string' && c.description_en.trim()) out.descriptionEn = c.description_en.trim();
