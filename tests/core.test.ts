@@ -333,6 +333,7 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
       characters: [],
       summaries: { '0': 'Chu Yang dies on the mountain and wakes up years earlier.', '1': 'Köye döner ve eski dostunu görür.', '2': '—' },
       summariesEn: {},
+      noCast: [0, 1],
     };
     assert.equal(chapterNeedsWork(nb, 0, 'tr'), true);
     assert.equal(chapterNeedsWork(nb, 1, 'tr'), false);
@@ -347,6 +348,14 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(chapterNeedsWork(withNote, 1, 'tr'), false);
     assert.equal(chapterNeedsWork(withNote, 1, 'en'), true);
     assert.equal(clearChapterNotes(withNote, 1).characters[0].notes.length, 0);
+    // Saved without characters by an older version: redone; checked and empty: kept.
+    const noChars = { characters: [], summaries: { '1': 'Köye döner.' }, summariesEn: { '1': 'He returns.' } };
+    assert.equal(chapterNeedsWork(noChars, 1, 'tr'), true);
+    const checked = mergeChapterInfo(noChars, 1, { summary: 'Köye döner.', summaryEn: 'He returns.', characters: [] });
+    assert.equal(chapterNeedsWork(checked, 1, 'tr'), false);
+    const found = mergeChapterInfo(checked, 1, { summary: 'Köye döner.', characters: [{ name: 'Ali', description: '' }] });
+    assert.deepEqual(found.noCast, []);
+    assert.equal(chapterNeedsWork(found, 1, 'tr'), false);
     assert.equal(noteText({ chapter: 0, text: 'Known as the Poisonous Sword Revered Martial Artist', en: 'x' }, 'tr'), 'x');
   });
 

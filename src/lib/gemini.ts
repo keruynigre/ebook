@@ -231,11 +231,12 @@ ${JSON.stringify(input)}`;
         items: {
           type: 'OBJECT',
           properties: { name: { type: 'STRING' }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
-          required: ['name'],
+          required: ['name', 'description', 'description_en'],
         },
       },
     },
-    required: ['title', 'paragraphs'],
+    // Optional fields are often left out of structured answers, so ask for all of them.
+    required: ['title', 'paragraphs', 'notes', 'newTerms', 'summary', 'summary_en', 'characters'],
   };
   const jsonHint =
     '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}], "summary": string, "summary_en": string, "characters": [{"name": string, "description": string, "description_en": string}]}';
@@ -403,11 +404,11 @@ ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.
               items: {
                 type: 'OBJECT',
                 properties: { name: { type: 'STRING' }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
-                required: ['name'],
+                required: ['name', 'description', 'description_en'],
               },
             },
           },
-          required: ['index', 'summary'],
+          required: ['index', 'summary', 'summary_en', 'characters'],
         },
       },
     },

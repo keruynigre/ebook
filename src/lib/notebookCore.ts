@@ -25,6 +25,12 @@ export interface Notebook {
   summaries: Record<string, string>;
   /** Chapter index → the same summary in English. */
   summariesEn?: Record<string, string>;
+  /**
+   * Chapters checked and found to have no characters worth noting. A chapter with a
+   * summary but no characters and not listed here was saved by a version whose
+   * answers often left the characters out, so it is processed again.
+   */
+  noCast?: number[];
 }
 
 export interface ChapterInfo {
@@ -46,16 +52,25 @@ export function noteText(n: CharacterNote, lang: 'tr' | 'en'): string {
 }
 
 /** Whether a chapter still has to be (re)processed so the notebook can show it in `lang`. */
-export function chapterNeedsWork(nb: Notebook, chapter: number, lang: 'tr' | 'en'): boolean {
+export function chapterNeedsWork(nb: Notebook, chapter: number, lang: 'tr' | 'en', withCast?: Set<number>): boolean {
   const k = String(chapter);
   const tr = nb.summaries[k];
   if (!tr) return true;
   if (tr === '—') return false;
   if (lang === 'en' ? !nb.summariesEn?.[k] : !looksTurkish(tr)) return true;
+  const cast = withCast ?? chaptersWithCast(nb);
+  if (!cast.has(chapter) && !nb.noCast?.includes(chapter)) return true;
   // Character notes saved by older versions in one language only.
   return nb.characters.some((c) =>
     c.notes.some((n) => n.chapter === chapter && (lang === 'en' ? !n.en : !n.text || (!looksTurkish(n.text) && !n.en))),
   );
+}
+
+/** Chapters at least one character was seen in. */
+export function chaptersWithCast(nb: Notebook): Set<number> {
+  const out = new Set<number>();
+  for (const c of nb.characters) for (const k of c.seenIn) out.add(k);
+  return out;
 }
 
 /** Drop a chapter's character notes before it is processed again, so no one-language leftovers remain. */
@@ -131,7 +146,9 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
   const summariesEn = { ...(nb.summariesEn ?? {}) };
   if (info.summary?.trim()) summaries[String(chapter)] = info.summary.trim();
   if (info.summaryEn?.trim()) summariesEn[String(chapter)] = info.summaryEn.trim();
-  return { characters, summaries, summariesEn };
+  const noCast = (nb.noCast ?? []).filter((k) => k !== chapter);
+  if (!info.characters.length) noCast.push(chapter);
+  return { ...nb, characters, summaries, summariesEn, noCast };
 }
 
 /** Parse the optional notebook fields of a Gemini answer. */

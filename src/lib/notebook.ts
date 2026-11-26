@@ -9,7 +9,7 @@ import { GeminiError, analyzeChapters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { chapterNeedsWork, clearChapterNotes, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { chapterNeedsWork, chaptersWithCast, clearChapterNotes, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -109,7 +109,8 @@ export function useNotebookJob(bookId: string): NotebookJob | undefined {
 export function missingChapters(bookId: string, nb: Notebook, upTo: number, lang: 'tr' | 'en'): number[] {
   const book = getBook(bookId);
   if (!book) return [];
-  return book.downloaded.filter((i) => i <= upTo && chapterNeedsWork(nb, i, lang)).sort((a, b) => a - b);
+  const withCast = chaptersWithCast(nb);
+  return book.downloaded.filter((i) => i <= upTo && chapterNeedsWork(nb, i, lang, withCast)).sort((a, b) => a - b);
 }
 
 const BATCH_CHARS = 28_000;
