@@ -142,6 +142,29 @@ export function panelPrompt(panel: ComicPanel, cast: ComicCast, color = false, r
   return prompt;
 }
 
+export type ComicQuality = 'high' | 'balanced' | 'saver';
+
+/**
+ * Drawing presets. Cloudflare bills FLUX.2 [klein] per 512×512 tile (26 neurons per
+ * output tile, 5.4 per input tile), so smaller panels and fewer references cost less.
+ */
+export const COMIC_QUALITY: Record<ComicQuality, { width: number; height: number; refs: number; panels: [number, number] }> = {
+  high: { width: 1024, height: 768, refs: 4, panels: [12, 15] },
+  balanced: { width: 768, height: 576, refs: 3, panels: [10, 12] },
+  saver: { width: 640, height: 480, refs: 2, panels: [8, 10] },
+};
+
+/** Rough neurons for one chapter (panels only; character cards come on top, once per character). */
+export function chapterCost(q: ComicQuality): number {
+  const c = COMIC_QUALITY[q];
+  const tiles = (c.width * c.height) / (512 * 512);
+  const perPanel = tiles * 26.05 + c.refs * 0.88 * 5.37;
+  return Math.round(perPanel * ((c.panels[0] + c.panels[1]) / 2));
+}
+
+/** The script instructions, asking for `panels` (min, max) panels. */
+export const comicSystem = (panels: [number, number] = [12, 15]) => COMIC_SYSTEM.replace('12 to 15 panels', `${panels[0]} to ${panels[1]} panels`);
+
 export const COMIC_SYSTEM = `You turn a chapter of a Chinese wuxia/xianxia web novel into a black-and-white comic (webtoon) script.
 Return JSON with:
 - "panels": 12 to 15 panels that tell the chapter's main events in order. For each panel:

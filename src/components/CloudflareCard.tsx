@@ -4,6 +4,7 @@ import { Alert, Linking, Pressable, Switch, Text, TextInput, View } from 'react-
 
 import { listAccounts } from '../lib/cloudflare';
 import { chooseStyleImage, clearStyleImage, styleRefFile } from '../lib/comic';
+import { chapterCost, type ComicQuality } from '../lib/comicCore';
 import { setCfToken, setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
 import { Button, Card, ui } from './ui';
@@ -11,6 +12,12 @@ import { Button, Card, ui } from './ui';
 const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
 
 /** Settings card for the Cloudflare Workers AI token that draws comic panels. */
+const QUALITIES: { id: ComicQuality; label: string; note: string }[] = [
+  { id: 'high', label: 'Yüksek', note: '1024×768, bölüm başına 12-15 kare.' },
+  { id: 'balanced', label: 'Dengeli', note: '768×576, bölüm başına 10-12 kare; telefonda fark çok az.' },
+  { id: 'saver', label: 'Tasarruflu', note: '640×480, bölüm başına 8-10 kare; çizgiler biraz yumuşar.' },
+];
+
 export function CloudflareCard() {
   const settings = useSettings();
   const [token, setToken] = useState('');
@@ -106,6 +113,24 @@ export function CloudflareCard() {
         </View>
         <Switch value={settings.comicColor} onValueChange={(v) => setSettings({ comicColor: v })} trackColor={{ true: colors.accent }} />
       </View>
+
+      <Text style={[ui.text, { marginTop: 6 }]}>Çizim kalitesi</Text>
+      <View style={ui.row}>
+        {QUALITIES.map((q) => (
+          <Button
+            key={q.id}
+            small
+            title={q.label}
+            variant={settings.comicQuality === q.id ? 'primary' : 'secondary'}
+            onPress={() => setSettings({ comicQuality: q.id })}
+            style={{ flex: 1 }}
+          />
+        ))}
+      </View>
+      <Text style={ui.muted}>
+        {QUALITIES.find((q) => q.id === settings.comicQuality)?.note} Ücretsiz günlük hakla yaklaşık{' '}
+        {Math.floor(10_000 / chapterCost(settings.comicQuality))} bölüm çizilir (yeni karakterlerin kartları da biraz harcar).
+      </Text>
 
       <Text style={[ui.text, { marginTop: 6 }]}>Tarz görseli</Text>
       <Text style={ui.muted}>

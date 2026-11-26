@@ -1,3 +1,4 @@
+import type { ComicQuality } from './comicCore';
 import { File, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import { useSyncExternalStore } from 'react';
@@ -35,6 +36,8 @@ export interface ReaderSettings {
   hasCfToken: boolean;
   /** Comic panels in colour instead of black and white. */
   comicColor: boolean;
+  /** Panel size and number of references: smaller costs fewer Cloudflare neurons. */
+  comicQuality: ComicQuality;
   /** Whether an art style picture was chosen for the comic (saved as comic-style.jpg). */
   comicStyleRef: boolean;
   /** Changes whenever a new style picture is chosen, so character cards are drawn again in the new style. */
@@ -65,6 +68,7 @@ const DEFAULTS: ReaderSettings = {
   cfAccountId: '',
   hasCfToken: false,
   comicColor: false,
+  comicQuality: 'balanced',
   comicStyleRef: false,
   comicStyleVersion: 0,
 };

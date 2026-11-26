@@ -12,6 +12,7 @@ import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/gener
 import { sourceForUrl } from '../src/lib/sources';
 import { cleanParagraphs, htmlToParagraphs, slugify } from '../src/lib/text';
 import type { Http } from '../src/lib/types';
+import { chapterCost, comicSystem } from '../src/lib/comicCore';
 import { countWords, formatCount, pastReading, recordRead, summarize, wordsRead } from '../src/lib/readStats';
 import {
   edgeDate,
@@ -480,6 +481,11 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(hdrs.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
     assert.match(sent[0], /Path:speech\.config/);
     assert.match(sent[1], /Path:ssml\r\n\r\n<speak .*AhmetNeural.*Merhaba dünya/);
+  });
+
+  await test('comic quality presets', () => {
+    assert.match(comicSystem([8, 10]), /"panels": 8 to 10 panels/);
+    assert.ok(chapterCost('saver') < chapterCost('balanced') && chapterCost('balanced') < chapterCost('high'));
   });
 
   await test('reading statistics', () => {

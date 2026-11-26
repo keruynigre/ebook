@@ -11,7 +11,8 @@ import { CloudflareError, drawImage, drawWithRefs } from './cloudflare';
 import {
   COMIC_HINT,
   COMIC_SCHEMA,
-  COMIC_SYSTEM,
+  COMIC_QUALITY,
+  comicSystem,
   cardPrompt,
   castNames,
   comicRequest,
@@ -103,7 +104,6 @@ async function loadCast(bookId: string): Promise<ComicCast> {
 
 /** Reference pictures must be under 512×512 for FLUX.2. */
 const REF_SIDE = 480;
-const PANEL_SIZE = { width: 1024, height: 768 };
 
 export const styleRefFile = () => new File(Paths.document, 'comic-style.jpg');
 
@@ -250,7 +250,7 @@ async function writeScript(bookId: string, index: number, update: (j: Partial<Co
     }
     try {
       update({ message: 'Sahneler seçiliyor (Gemini)…' });
-      const data = await generateJson(key, choice.model, COMIC_SYSTEM, prompt, COMIC_SCHEMA, COMIC_HINT);
+      const data = await generateJson(key, choice.model, comicSystem(COMIC_QUALITY[settings.comicQuality ?? 'balanced'].panels), prompt, COMIC_SCHEMA, COMIC_HINT);
       const { script, cast: found } = parseComicScript(index, data);
       if (!script.panels.length) throw new GeminiError('Gemini sahne döndürmedi.', 'other');
       await comicCastFile(bookId).write(JSON.stringify(mergeCast(cast, found)));
@@ -277,6 +277,7 @@ async function drawChapter(bookId: string, index: number) {
   const cast = await loadCast(bookId);
   const color = !!settings.comicColor;
   const styleFile = settings.comicStyleRef && styleRefFile().exists ? styleRefFile() : null;
+  const quality = COMIC_QUALITY[settings.comicQuality ?? 'balanced'];
   const total = script.panels.length;
   const isDrawn = (p: number) => panelFile(bookId, index, p).exists;
   let skipped = 0;
@@ -294,7 +295,7 @@ async function drawChapter(bookId: string, index: number) {
         let image: string;
         if (tries < 2) {
           // FLUX.2 with the style picture and the characters' reference cards.
-          const names = castNames(panel, cast).slice(0, styleFile ? 3 : 4);
+          const names = castNames(panel, cast).slice(0, Math.max(1, quality.refs - (styleFile ? 1 : 0)));
           const cards: { name: string; file: File }[] = [];
           for (const n of names) {
             update({ message: `${n} için karakter kartı hazırlanıyor…` });
@@ -308,7 +309,7 @@ async function drawChapter(bookId: string, index: number) {
             settings.cfAccountId,
             panelPrompt(panel, cast, color, { style: !!styleFile, cards: cards.map((c) => c.name) }),
             refs,
-            PANEL_SIZE,
+            { width: quality.width, height: quality.height },
             seed,
           );
         } else {
