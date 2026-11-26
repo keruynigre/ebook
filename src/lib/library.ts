@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 import { detectImageType } from './epub';
 import { http } from './http';
+import { recordRead } from './readStats';
 import { sourceById } from './sources';
 import type { ProgressInfo } from './sources/types';
 import * as storage from './storage';
@@ -66,11 +67,13 @@ export function chapterPosition(id: string, index: number): number {
   return b?.progress && b.progress.index === index ? b.progress.position : 0;
 }
 
-export async function saveProgress(id: string, index: number, position: number): Promise<void> {
+/** Saves where a chapter was left; with its word count, also updates the reading statistics. */
+export async function saveProgress(id: string, index: number, position: number, words?: number): Promise<void> {
   await updateBook(id, (b) => ({
     ...b,
     progress: { index, position, updatedAt: Date.now() },
     positions: { ...b.positions, [index]: position },
+    readStats: words ? recordRead(b.readStats, index, words, position) : b.readStats,
   }));
 }
 

@@ -43,6 +43,10 @@ export interface Book {
   progress?: { index: number; position: number; updatedAt: number };
   /** Scroll position (0–1) per chapter index, so every chapter reopens where it was left. */
   positions?: Record<number, number>;
+  /** Words and furthest point reached per chapter index (see readStats.ts). */
+  readStats?: Record<number, { words: number; read: number }>;
+  /** Set once chapters read before statistics existed have been counted. */
+  readStatsBackfilled?: boolean;
   /** File name of the cover inside the book folder, if any. */
   coverFile?: string;
   addedAt: number;

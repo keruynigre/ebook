@@ -12,6 +12,7 @@ import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/gener
 import { sourceForUrl } from '../src/lib/sources';
 import { cleanParagraphs, htmlToParagraphs, slugify } from '../src/lib/text';
 import type { Http } from '../src/lib/types';
+import { countWords, formatCount, pastReading, recordRead, summarize, wordsRead } from '../src/lib/readStats';
 import {
   edgeDate,
   fullVoiceName,
@@ -470,6 +471,23 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(hdrs.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
     assert.match(sent[0], /Path:speech\.config/);
     assert.match(sent[1], /Path:ssml\r\n\r\n<speak .*AhmetNeural.*Merhaba dünya/);
+  });
+
+  await test('reading statistics', () => {
+    assert.equal(countWords(['Chu Yang didn’t move.', 'Bir, iki — üç! 3.000 adım']), 9);
+    let st = recordRead(undefined, 4, 1000, 0.5);
+    st = recordRead(st, 4, 1000, 0.2);
+    assert.deepEqual(st[4], { words: 1000, read: 0.5 });
+    assert.equal(wordsRead(st[4]), 500);
+    st = recordRead(st, 5, 800, 0.98);
+    assert.equal(wordsRead(st[5]), 800);
+    assert.deepEqual(summarize(st), { wordsRead: 1300, wordsOpened: 1800, opened: 2, finished: 1 });
+    assert.equal(formatCount(1234567), '1.234.567');
+    assert.deepEqual(pastReading({ 1: 0.3, 3: 0.4 }, 3, { 0: { words: 1, read: 1 } }), [
+      { index: 1, read: 1 },
+      { index: 2, read: 1 },
+      { index: 3, read: 0.4 },
+    ]);
   });
 
   console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

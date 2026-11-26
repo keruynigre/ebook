@@ -168,6 +168,11 @@ export default function BookScreen() {
           style={{ flex: 1 }}
         />
       </View>
+      <Button
+        title="📊 Okuma istatistiği"
+        variant="secondary"
+        onPress={() => router.push({ pathname: '/stats/[id]', params: { id: book.id } })}
+      />
 
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>İndirme ve çeviri</Text>

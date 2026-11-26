@@ -22,6 +22,7 @@ import { startDownload, useDownload } from '../../../lib/downloads';
 import { chapterPosition, saveProgress, useBook } from '../../../lib/library';
 import { READER_FONTS, type ReaderFont } from '../../../lib/fonts';
 import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../../../lib/settings';
+import { countWords, FINISHED_AT, formatCount } from '../../../lib/readStats';
 import { loadChapter, loadTranslation } from '../../../lib/storage';
 import { colors } from '../../../lib/theme';
 import type { ChapterContent } from '../../../lib/types';
@@ -93,10 +94,15 @@ export default function Reader() {
   const sizes = useRef({ content: 0, view: 0 });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Word count of the text on screen, tagged with its chapter so a lagging render can't mix them up.
+  const wordsRef = useRef({ index: -1, words: 0 });
+  const [scrollPct, setScrollPct] = useState({ index: -1, pct: 0 });
+
   const save = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
-    saveProgress(id, i, position.current).catch(() => undefined);
+    const words = wordsRef.current.index === i ? wordsRef.current.words : undefined;
+    saveProgress(id, i, position.current, words).catch(() => undefined);
   }, [id, i]);
 
   useEffect(() => {
@@ -140,6 +146,11 @@ export default function Reader() {
   const shownLang: 'tr' | 'en' = shown && shown === translation ? 'tr' : originalLang;
   const textSettled =
     !!chapter && loadedIdx.chapter === i && (!isTranslated || !settings.showTranslation || loadedIdx.translation === i);
+  const shownWords = useMemo(() => (shown ? countWords([shown.title ?? '', ...shown.paragraphs]) : 0), [shown]);
+  useEffect(() => {
+    if (textSettled && shownWords) wordsRef.current = { index: i, words: shownWords };
+  }, [textSettled, shownWords, i]);
+  const pct = scrollPct.index === i ? scrollPct.pct : Math.round(chapterPosition(id, i) * 100);
   const narrHere = narr.bookId === id && narr.chapter === i && narr.status !== 'idle';
   const highlightOn = narrHere && narr.lang === shownLang;
   const narrActive = narr.bookId === id && narr.status !== 'idle';
@@ -259,6 +270,8 @@ export default function Reader() {
     const range = contentSize.height - layoutMeasurement.height;
     position.current = range > 0 ? Math.min(1, Math.max(0, contentOffset.y / range)) : 0;
     scrollY.current = contentOffset.y;
+    const p = Math.round(position.current * 100);
+    if (p !== pct || scrollPct.index !== i) setScrollPct({ index: i, pct: p });
     if (!saveTimer.current) saveTimer.current = setTimeout(save, SAVE_EVERY_MS);
   };
 
@@ -473,7 +486,7 @@ export default function Reader() {
           sizes.current.content = h;
           tryRestore();
         }}
-        contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 16, paddingBottom: 28 + insets.bottom }}
+        contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 16, paddingBottom: 28 }}
       >
         <Text
           style={[
@@ -570,18 +583,41 @@ export default function Reader() {
             ]);
           }}
           footer={
-            <View style={{ padding: 12 }}>
+            <View style={{ padding: 12, flexDirection: 'row', gap: 8 }}>
               <Button
                 variant="secondary"
-                title="📓 Hikâye defteri"
+                title="📓 Defter"
+                style={{ flex: 1 }}
                 onPress={() => {
                   setShowChapters(false);
                   router.push({ pathname: '/notebook/[id]', params: { id } });
                 }}
               />
+              <Button
+                variant="secondary"
+                title="📊 İstatistik"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setShowChapters(false);
+                  save();
+                  router.push({ pathname: '/stats/[id]', params: { id } });
+                }}
+              />
             </View>
           }
         />
+      )}
+
+      {!!chapter && (
+        <View style={[styles.progress, { borderColor: theme.muted + '55', paddingBottom: narrActive || narr.message ? 4 : 4 + insets.bottom }]}>
+          <View style={[styles.progressTrack, { backgroundColor: theme.muted + '33' }]}>
+            <View style={[styles.progressFill, { width: `${pct}%` }]} />
+          </View>
+          <Text style={[styles.progressText, { color: theme.muted }]} numberOfLines={1}>
+            %{pct}
+            {shownWords ? ` · ${formatCount(pct >= FINISHED_AT * 100 ? shownWords : (shownWords * pct) / 100)} / ${formatCount(shownWords)} kelime` : ''}
+          </Text>
+        </View>
       )}
 
       <WordBubble
@@ -647,6 +683,10 @@ const styles = StyleSheet.create({
   sheet: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 12, maxHeight: '75%' },
   sheetTitle: { fontSize: 16, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 8 },
   fontRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 2 },
+  progress: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 4, gap: 3 },
+  progressTrack: { height: 3, borderRadius: 2, overflow: 'hidden' },
+  progressFill: { height: 3, backgroundColor: colors.accent },
+  progressText: { fontSize: 11, textAlign: 'right' },
   player: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 8, gap: 6 },
   playerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   playerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
