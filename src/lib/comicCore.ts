@@ -26,10 +26,14 @@ export interface ComicScript {
 /** Name → fixed English look, kept for the whole book so characters stay the same from panel to panel. */
 export type ComicCast = Record<string, string>;
 
-/** Black-and-white wuxia manhua: ink lines and screentones. */
-export const COMIC_STYLE =
-  'black and white manga illustration, Chinese wuxia manhua, detailed ink line art, screentone shading, ' +
-  'high contrast, cinematic composition, ancient Chinese setting, monochrome, no color';
+/** Wuxia manhua look: black-and-white ink with screentones, or full colour. */
+export function comicStyle(color: boolean): string {
+  return color
+    ? 'full color Chinese wuxia manhua illustration, clean ink line art, vibrant cel shading, rich colors, cinematic composition, ancient Chinese setting'
+    : 'black and white manga illustration, Chinese wuxia manhua, detailed ink line art, screentone shading, high contrast, cinematic composition, ancient Chinese setting, monochrome, no color';
+}
+/** @deprecated kept for tests; same as comicStyle(false). */
+export const COMIC_STYLE = comicStyle(false);
 
 const NO_TEXT = 'no text, no letters, no speech bubbles, no captions, no watermark';
 const MAX_PROMPT = 1900;
@@ -76,18 +80,61 @@ const lookOf = (cast: ComicCast, name: string) => {
   return key ? cast[key] : '';
 };
 
+export interface PromptRefs {
+  /** Input image 0 is the user's art style picture. */
+  style?: boolean;
+  /** Character reference cards in input-image order (after the style picture). */
+  cards?: string[];
+}
+
+/** How the reference pictures are meant to be used, for the image model. */
+function refText(refs: PromptRefs): string {
+  const out: string[] = [];
+  let k = 0;
+  if (refs.style) out.push(`Draw in the art style of image ${k++} (style reference only, not its content)`);
+  for (const name of refs.cards ?? []) out.push(`image ${k++} is ${name}: keep exactly the same face, hairstyle and clothing`);
+  return out.join('. ');
+}
+
+/** Names of a panel's characters that have a look in the cast (the ones worth a reference card). */
+export function castNames(panel: ComicPanel, cast: ComicCast): string[] {
+  const out: string[] = [];
+  for (const n of panel.characters) {
+    const n2 = n.toLowerCase();
+    const key = Object.keys(cast).find((k) => k.toLowerCase() === n2) ?? Object.keys(cast).find((k) => k.toLowerCase().includes(n2) || n2.includes(k.toLowerCase()));
+    if (key && !out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
+/** Prompt for a character's reference card (portrait on a plain background). */
+export function cardPrompt(name: string, look: string, color = false, styleRef = false): string {
+  return [
+    styleRef ? 'Draw in the art style of image 0 (style reference only)' : '',
+    comicStyle(color),
+    `character reference portrait of ${name}: ${look}`,
+    'upper body, facing the viewer, clear face, plain white background',
+    NO_TEXT,
+  ]
+    .filter(Boolean)
+    .join('. ')
+    .slice(0, MAX_PROMPT);
+}
+
 /** Text prompt for one panel picture. */
-export function panelPrompt(panel: ComicPanel, cast: ComicCast): string {
+export function panelPrompt(panel: ComicPanel, cast: ComicCast, color = false, refs: PromptRefs = {}): string {
+  const STYLE = comicStyle(color);
   const people = panel.characters
     .map((n) => {
       const look = lookOf(cast, n);
       return look ? `${n}: ${look}` : '';
     })
     .filter(Boolean);
-  const parts = [COMIC_STYLE, panel.scene, people.length ? `Characters: ${people.join('; ')}` : '', NO_TEXT].filter(Boolean);
+  const ref = refText(refs);
+  const parts = [ref, STYLE, panel.scene, people.length ? `Characters: ${people.join('; ')}` : '', NO_TEXT].filter(Boolean);
   let prompt = parts.join('. ');
   if (prompt.length > MAX_PROMPT) {
-    const head = `${COMIC_STYLE}. ${panel.scene}`.slice(0, MAX_PROMPT - NO_TEXT.length - 4);
+    const head = `${ref ? `${ref}. ` : ''}${STYLE}. ${panel.scene}`.slice(0, MAX_PROMPT - NO_TEXT.length - 4);
     const room = MAX_PROMPT - head.length - NO_TEXT.length - 4;
     const ppl = people.length && room > 40 ? `. Characters: ${people.join('; ')}`.slice(0, room) : '';
     prompt = `${head}${ppl}. ${NO_TEXT}`;

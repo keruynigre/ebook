@@ -1,7 +1,9 @@
+import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Linking, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { listAccounts } from '../lib/cloudflare';
+import { chooseStyleImage, clearStyleImage, styleRefFile } from '../lib/comic';
 import { setCfToken, setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
 import { Button, Card, ui } from './ui';
@@ -96,6 +98,32 @@ export function CloudflareCard() {
       </View>
       {!!error && <Text style={ui.error}>{error}</Text>}
       {!!note && <Text style={ui.muted}>{note}</Text>}
+
+      <View style={[ui.row, { justifyContent: 'space-between', marginTop: 6 }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={ui.text}>Renkli çiz</Text>
+          <Text style={ui.muted}>Kapalıysa siyah-beyaz. Değişiklik yeni çizilen karelerde görünür.</Text>
+        </View>
+        <Switch value={settings.comicColor} onValueChange={(v) => setSettings({ comicColor: v })} trackColor={{ true: colors.accent }} />
+      </View>
+
+      <Text style={[ui.text, { marginTop: 6 }]}>Tarz görseli</Text>
+      <Text style={ui.muted}>
+        Beğendiğin bir çizgi roman sayfası ya da çizim seçersen kareler o tarza benzer çizilir. Seçmezsen yazılı tarif
+        kullanılır.
+      </Text>
+      {settings.comicStyleRef && (
+        <Image source={{ uri: styleRefFile().uri }} style={{ width: 140, height: 140, borderRadius: 8 }} contentFit="cover" cachePolicy="none" />
+      )}
+      <View style={ui.row}>
+        <Button
+          title={settings.comicStyleRef ? 'Değiştir' : 'Görsel seç'}
+          variant="secondary"
+          onPress={() => chooseStyleImage().catch((e) => Alert.alert('Görsel seçilemedi', (e as Error).message))}
+          style={{ flex: 1 }}
+        />
+        {settings.comicStyleRef && <Button title="Kaldır" variant="danger" onPress={clearStyleImage} />}
+      </View>
     </Card>
   );
 }

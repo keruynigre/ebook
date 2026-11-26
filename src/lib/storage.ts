@@ -163,3 +163,10 @@ export function comicCastFile(id: string): File {
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
   return new File(dir, 'cast.json');
 }
+
+/** Character reference cards of a book, one folder per drawing mode (bw / color). */
+export function comicCardsDir(id: string, mode: string): Directory {
+  const dir = new Directory(bookDir(id), 'comic', 'cards', mode);
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  return dir;
+}

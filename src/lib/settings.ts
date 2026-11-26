@@ -33,6 +33,12 @@ export interface ReaderSettings {
   /** Cloudflare account for drawing comic panels (Workers AI); the token lives in secure storage. */
   cfAccountId: string;
   hasCfToken: boolean;
+  /** Comic panels in colour instead of black and white. */
+  comicColor: boolean;
+  /** Whether an art style picture was chosen for the comic (saved as comic-style.jpg). */
+  comicStyleRef: boolean;
+  /** Changes whenever a new style picture is chosen, so character cards are drawn again in the new style. */
+  comicStyleVersion: number;
 }
 
 export const READER_THEMES: Record<ReaderTheme, { bg: string; text: string; muted: string; label: string }> = {
@@ -58,6 +64,9 @@ const DEFAULTS: ReaderSettings = {
   ttsRate: 1,
   cfAccountId: '',
   hasCfToken: false,
+  comicColor: false,
+  comicStyleRef: false,
+  comicStyleVersion: 0,
 };
 
 const KEY_NAME = 'gemini-api-key';

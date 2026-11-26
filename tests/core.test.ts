@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
-import { mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
+import { cardPrompt, castNames, mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
 import { chapterNeedsWork, clearChapterNotes, emptyNotebook, findCharacter, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
@@ -369,6 +369,12 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.ok(prompt.includes('long black hair'));
     assert.ok(prompt.includes('black and white'));
     assert.ok(prompt.length <= 1900);
+    const withRefs = panelPrompt(script.panels[0], cast, true, { style: true, cards: ['Chu Yang'] });
+    assert.ok(withRefs.startsWith('Draw in the art style of image 0'));
+    assert.ok(withRefs.includes('image 1 is Chu Yang'));
+    assert.ok(withRefs.includes('full color'));
+    assert.deepEqual(castNames({ scene: 'x', characters: ['chu yang', 'Nobody'], bubbles: [] }, cast), ['Chu Yang']);
+    assert.ok(cardPrompt('Chu Yang', cast['Chu Yang']).includes('plain white background'));
     const long = panelPrompt({ scene: 'x'.repeat(3000), characters: ['Chu Yang'], bubbles: [] }, cast);
     assert.ok(long.length <= 1900 && long.endsWith('no watermark'));
   });

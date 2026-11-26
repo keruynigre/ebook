@@ -41,6 +41,8 @@ export default function ComicScreen() {
   const { width } = useWindowDimensions();
   const lang: 'tr' | 'en' = settings.showTranslation ? 'tr' : 'en';
   const [script, setScript] = useState<ComicScript | null | undefined>(undefined);
+  // Height/width of each drawn panel (older panels are square, newer ones 4:3).
+  const [ratios, setRatios] = useState<Record<string, number>>({});
   const ready = settings.hasCfToken && !!settings.cfAccountId && settings.hasGeminiKey;
 
   // Start drawing as soon as the chapter is opened.
@@ -151,13 +153,17 @@ export default function ComicScreen() {
                 {f.exists ? (
                   <Image
                     source={{ uri: f.uri }}
-                    style={[styles.panel, { width: side, height: side }]}
-                    contentFit="cover"
+                    style={[styles.panel, { width: side, height: side * (ratios[`${i}-${p}`] ?? 0.75) }]}
+                    onLoad={(e) => {
+                      const r = e.source.height / Math.max(1, e.source.width);
+                      if (r > 0 && Math.abs((ratios[`${i}-${p}`] ?? 0) - r) > 0.01) setRatios((x) => ({ ...x, [`${i}-${p}`]: r }));
+                    }}
+                    contentFit="contain"
                     cachePolicy="none"
                     recyclingKey={`${i}-${p}-${v}`}
                   />
                 ) : (
-                  <View style={[styles.panel, styles.empty, { width: side, height: side }]}>
+                  <View style={[styles.panel, styles.empty, { width: side, height: side * 0.75 }]}>
                     {job?.running ? <ActivityIndicator color={INK} /> : <Text style={styles.note}>Çizilmedi (uzun bas: yeniden çiz)</Text>}
                   </View>
                 )}

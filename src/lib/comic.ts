@@ -3,18 +3,31 @@
  * Cloudflare FLUX draws each panel. Everything is saved under the book so a
  * chapter is drawn only once. One chapter is drawn at a time.
  */
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useSyncExternalStore } from 'react';
 
-import { CloudflareError, drawImage } from './cloudflare';
-import { COMIC_HINT, COMIC_SCHEMA, COMIC_SYSTEM, comicRequest, mergeCast, panelPrompt, parseComicScript, type ComicCast, type ComicScript } from './comicCore';
+import { CloudflareError, drawImage, drawWithRefs } from './cloudflare';
+import {
+  COMIC_HINT,
+  COMIC_SCHEMA,
+  COMIC_SYSTEM,
+  cardPrompt,
+  castNames,
+  comicRequest,
+  mergeCast,
+  panelPrompt,
+  parseComicScript,
+  type ComicCast,
+  type ComicScript,
+} from './comicCore';
 import { GeminiError, generateJson } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
 import { loadNotebook } from './notebook';
-import { getCfToken, getGeminiKey, getSettings } from './settings';
-import { comicCastFile, comicDir, loadChapter } from './storage';
+import { getCfToken, getGeminiKey, getSettings, setSettings } from './settings';
+import { comicCardsDir, comicCastFile, comicDir, loadChapter } from './storage';
 
 export type { ComicScript } from './comicCore';
 
@@ -83,6 +96,62 @@ async function loadCast(bookId: string): Promise<ComicCast> {
     return JSON.parse(await f.text()) as ComicCast;
   } catch {
     return {};
+  }
+}
+
+// ---- art style picture and character cards -----------------------------------
+
+/** Reference pictures must be under 512×512 for FLUX.2. */
+const REF_SIDE = 480;
+const PANEL_SIZE = { width: 1024, height: 768 };
+
+export const styleRefFile = () => new File(Paths.document, 'comic-style.jpg');
+
+/** Let the user pick a picture whose drawing style the panels should follow. */
+export async function chooseStyleImage(): Promise<boolean> {
+  const picked = await File.pickFileAsync({ mimeTypes: ['image/*'] });
+  if (picked.canceled || !picked.result) return false;
+  const first = await ImageManipulator.manipulate(picked.result.uri).renderAsync();
+  const scale = REF_SIDE / Math.max(first.width, first.height, 1);
+  const size = scale < 1 ? { width: Math.round(first.width * scale), height: Math.round(first.height * scale) } : { width: first.width, height: first.height };
+  const ref = await ImageManipulator.manipulate(picked.result.uri).resize(size).renderAsync();
+  const saved = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.85 });
+  const target = styleRefFile();
+  if (target.exists) target.delete();
+  new File(saved.uri).copy(target);
+  setSettings({ comicStyleRef: true, comicStyleVersion: (getSettings().comicStyleVersion ?? 0) + 1 });
+  return true;
+}
+
+export function clearStyleImage() {
+  const f = styleRefFile();
+  if (f.exists) f.delete();
+  setSettings({ comicStyleRef: false });
+}
+
+const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';
+const cardFile = (bookId: string, name: string, color: boolean, styled: boolean) =>
+  new File(comicCardsDir(bookId, `${color ? 'color' : 'bw'}${styled ? `-s${getSettings().comicStyleVersion ?? 0}` : ''}`), `${slug(name)}.jpg`);
+
+/** The character's reference card, drawn once per book and drawing mode. Null if it could not be drawn. */
+async function ensureCard(
+  token: string,
+  accountId: string,
+  bookId: string,
+  name: string,
+  look: string,
+  color: boolean,
+  style: File | null,
+): Promise<File | null> {
+  const f = cardFile(bookId, name, color, !!style);
+  if (f.exists) return f;
+  try {
+    const image = await drawWithRefs(token, accountId, cardPrompt(name, look, color, !!style), style ? [style.uri] : [], { width: REF_SIDE, height: REF_SIDE }, 7);
+    await f.write(image, { encoding: 'base64' });
+    return f;
+  } catch (e) {
+    if (e instanceof CloudflareError && (e.kind === 'daily' || e.kind === 'auth')) throw e;
+    return null;
   }
 }
 
@@ -206,6 +275,8 @@ async function drawChapter(bookId: string, index: number) {
   update({ message: 'Hazırlanıyor…', error: undefined });
   const script = (await loadComicScript(bookId, index)) ?? (await writeScript(bookId, index, update));
   const cast = await loadCast(bookId);
+  const color = !!settings.comicColor;
+  const styleFile = settings.comicStyleRef && styleRefFile().exists ? styleRefFile() : null;
   const total = script.panels.length;
   const isDrawn = (p: number) => panelFile(bookId, index, p).exists;
   let skipped = 0;
@@ -213,25 +284,50 @@ async function drawChapter(bookId: string, index: number) {
   for (let p = 0; p < total; p++) {
     if (isDrawn(p)) continue;
     let tries = 0;
+    let waits = 0;
     for (;;) {
       if (stopFlag) throw new Error('Durduruldu.');
       update({ message: `${p + 1}. kare çiziliyor…` });
       try {
-        // A fixed seed per panel keeps a redraw close to the first try only if the prompt is the same.
-        const image = await drawImage(token, settings.cfAccountId, panelPrompt(script.panels[p], cast), tries ? undefined : 1000 + index * 31 + p);
+        const panel = script.panels[p];
+        const seed = tries ? undefined : 1000 + index * 31 + p;
+        let image: string;
+        if (tries < 2) {
+          // FLUX.2 with the style picture and the characters' reference cards.
+          const names = castNames(panel, cast).slice(0, styleFile ? 3 : 4);
+          const cards: { name: string; file: File }[] = [];
+          for (const n of names) {
+            update({ message: `${n} için karakter kartı hazırlanıyor…` });
+            const card = await ensureCard(token, settings.cfAccountId, bookId, n, cast[n], color, styleFile);
+            if (card) cards.push({ name: n, file: card });
+          }
+          update({ message: `${p + 1}. kare çiziliyor…` });
+          const refs = [...(styleFile ? [styleFile.uri] : []), ...cards.map((c) => c.file.uri)];
+          image = await drawWithRefs(
+            token,
+            settings.cfAccountId,
+            panelPrompt(panel, cast, color, { style: !!styleFile, cards: cards.map((c) => c.name) }),
+            refs,
+            PANEL_SIZE,
+            seed,
+          );
+        } else {
+          // Last resort: the older text-only model.
+          image = await drawImage(token, settings.cfAccountId, panelPrompt(panel, cast, color), seed);
+        }
         await panelFile(bookId, index, p).write(image, { encoding: 'base64' });
         break;
       } catch (e) {
         if (!(e instanceof CloudflareError)) throw e;
         if (e.kind === 'daily' || e.kind === 'auth') throw e;
         if (e.kind === 'rate' || e.kind === 'busy') {
-          if (++tries > 6) throw e;
+          if (++waits > 6) throw e;
           update({ message: e.message });
-          await sleep(10_000 * tries);
+          await sleep(10_000 * waits);
           continue;
         }
-        // Refused or broken answer: try once more, then leave this panel empty.
-        if (++tries >= 2) {
+        // Refused or broken answer: try again, then with the older model, then leave this panel empty.
+        if (++tries >= 3) {
           skipped++;
           break;
         }
