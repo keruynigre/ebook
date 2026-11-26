@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './text';
 import { parseChapterInfo, type ChapterInfo } from './notebookCore';
 import type { ChapterContent } from './types';
 
@@ -26,15 +27,18 @@ export interface GeminiModel {
 
 async function call<T>(key: string, path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(`${API}/${path}`, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key, ...(init?.headers ?? {}) },
-    });
+    // Long chapters can take a few minutes to translate, but not forever.
+    ({ res, body: text } = await fetchWithTimeout(
+      `${API}/${path}`,
+      { ...init, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key, ...(init?.headers ?? {}) } },
+      init?.method === 'POST' ? 300_000 : 30_000,
+      (r) => r.text(),
+    ));
   } catch (e) {
     throw new GeminiError(`Gemini'ye bağlanılamadı: ${(e as Error).message}`, 'busy');
   }
-  const text = await res.text();
   let body: any = null;
   try {
     body = text ? JSON.parse(text) : null;

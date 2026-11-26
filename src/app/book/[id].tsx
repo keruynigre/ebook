@@ -20,6 +20,7 @@ export default function BookScreen() {
 
   const total = book?.chapters.length ?? 0;
   const [refreshing, setRefreshing] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [showChapters, setShowChapters] = useState(false);
@@ -143,9 +144,14 @@ export default function BookScreen() {
         </View>
       </View>
       {!!book.description && (
-        <Text style={ui.muted} numberOfLines={5}>
-          {book.description}
-        </Text>
+        <Pressable onPress={() => setShowAbout((v) => !v)} hitSlop={6}>
+          <Text style={ui.muted} numberOfLines={showAbout ? undefined : 5}>
+            {book.description}
+          </Text>
+          {book.description.length > 220 && (
+            <Text style={[ui.muted, { color: colors.accent, marginTop: 2 }]}>{showAbout ? 'Daha az göster ▴' : 'Devamını göster ▾'}</Text>
+          )}
+        </Pressable>
       )}
 
       <Button

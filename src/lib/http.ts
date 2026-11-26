@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './text';
 import type { Http } from './types';
 
 export const USER_AGENT =
@@ -38,14 +39,17 @@ export function registerBrowserBridge(b: BrowserBridge | null) {
 /** Hosts that answered with a challenge; they are fetched through the WebView from then on. */
 const browserHosts = new Set<string>();
 
-async function directFetch(url: string, accept: string): Promise<Response> {
-  return fetch(url, {
-    headers: {
-      'User-Agent': USER_AGENT,
-      Accept: accept,
-      'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8',
-    },
-  });
+async function directFetch<T>(url: string, accept: string, read: (r: Response) => Promise<T>): Promise<{ res: Response; body: T }> {
+  try {
+    return await fetchWithTimeout(
+      url,
+      { headers: { 'User-Agent': USER_AGENT, Accept: accept, 'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8' } },
+      45_000,
+      read,
+    );
+  } catch (e) {
+    throw new HttpError(`Bağlantı kurulamadı: ${(e as Error).message}`);
+  }
 }
 
 async function viaBrowser(url: string): Promise<string> {
@@ -57,13 +61,7 @@ export const http: Http = {
   async getText(url) {
     const host = new URL(url).host;
     if (browserHosts.has(host)) return viaBrowser(url);
-    let res: Response;
-    try {
-      res = await directFetch(url, 'text/html,application/xhtml+xml,*/*;q=0.8');
-    } catch (e) {
-      throw new HttpError(`Bağlantı kurulamadı: ${(e as Error).message}`);
-    }
-    const body = await res.text();
+    const { res, body } = await directFetch(url, 'text/html,application/xhtml+xml,*/*;q=0.8', (r) => r.text());
     if (isChallengePage(res.status, body)) {
       browserHosts.add(host);
       return viaBrowser(url);
@@ -73,8 +71,8 @@ export const http: Http = {
   },
 
   async getBytes(url) {
-    const res = await directFetch(url, 'image/avif,image/webp,image/*,*/*;q=0.8');
+    const { res, body } = await directFetch(url, 'image/avif,image/webp,image/*,*/*;q=0.8', (r) => r.arrayBuffer());
     if (!res.ok) throw new HttpError(`Dosya indirilemedi (HTTP ${res.status}).`, res.status);
-    return new Uint8Array(await res.arrayBuffer());
+    return new Uint8Array(body);
   },
 };

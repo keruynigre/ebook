@@ -1,4 +1,5 @@
 /** Cloudflare Workers AI: draws comic panels with FLUX. */
+import { fetchWithTimeout } from './text';
 
 const API = 'https://api.cloudflare.com/client/v4';
 export const FLUX_MODEL = '@cf/black-forest-labs/flux-1-schnell';
@@ -17,20 +18,25 @@ export class CloudflareError extends Error {
 
 async function cf(token: string, path: string, init?: RequestInit): Promise<any> {
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(`${API}${path}`, {
-      ...init,
-      // FormData bodies set their own multipart Content-Type (with the boundary).
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(typeof init?.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
-        ...(init?.headers ?? {}),
+    ({ res, body: text } = await fetchWithTimeout(
+      `${API}${path}`,
+      {
+        ...init,
+        // FormData bodies set their own multipart Content-Type (with the boundary).
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(typeof init?.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
+          ...(init?.headers ?? {}),
+        },
       },
-    });
+      120_000,
+      (r) => r.text(),
+    ));
   } catch (e) {
     throw new CloudflareError(`Cloudflare'a bağlanılamadı: ${(e as Error).message}`, 'busy');
   }
-  const text = await res.text();
   let body: any = null;
   try {
     body = text ? JSON.parse(text) : null;

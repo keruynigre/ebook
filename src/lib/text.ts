@@ -141,3 +141,26 @@ export function slugify(s: string, max = 40): string {
 export function safeFileName(s: string, max = 80): string {
   return normalizeSpace(s.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')).slice(0, max).trim() || 'kitap';
 }
+
+/**
+ * fetch + reading the body, giving up after `ms` in total, so a request lost to a
+ * network switch (or the screen turning off) can't stall a job forever.
+ */
+export async function fetchWithTimeout<T>(
+  url: string,
+  init: RequestInit,
+  ms: number,
+  read: (res: Response) => Promise<T>,
+): Promise<{ res: Response; body: T }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    return { res, body: await read(res) };
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new Error(`${Math.round(ms / 1000)} sn içinde yanıt gelmedi`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
