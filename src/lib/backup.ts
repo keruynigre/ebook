@@ -4,11 +4,12 @@
  * writes the files back; books with the same id are replaced, others kept.
  * The Gemini key lives in secure storage and is deliberately not included.
  */
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import JSZip from 'jszip';
 
 import { refreshLibrary } from './library';
 import { loadSettings } from './settings';
+import { ZipWriter } from './zipCore';
 
 const MANIFEST = 'ebook-backup.json';
 
@@ -51,29 +52,34 @@ export async function createBackup(onProgress: (p: BackupProgress) => void): Pro
   const bookCount = books.exists ? books.list().filter((e) => e instanceof Directory).length : 0;
   if (!bookCount) throw new Error('Kitaplıkta yedeklenecek kitap yok.');
 
-  const zip = new JSZip();
-  for (let k = 0; k < files.length; k++) {
-    if (k % 50 === 0) onProgress({ message: `Dosyalar okunuyor ${k}/${files.length}`, value: (k / files.length) * 0.4 });
-    zip.file(files[k].path, await files[k].file.bytes());
-  }
-  const manifest: Manifest = { app: 'ebook', format: 1, createdAt: new Date().toISOString(), books: bookCount, files: files.length };
-  zip.file(MANIFEST, JSON.stringify(manifest));
-
-  let last = 0;
-  const data = await zip.generateAsync(
-    { type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } },
-    (meta) => {
-      if (meta.percent - last >= 2) {
-        last = meta.percent;
-        onProgress({ message: `Sıkıştırılıyor %${Math.round(meta.percent)}`, value: 0.4 + (meta.percent / 100) * 0.5 });
-      }
-    },
-  );
-  onProgress({ message: 'Kaydediliyor…', value: 0.95 });
+  // Written one file at a time straight into the chosen folder: the whole library never sits in memory at once.
   const name = backupFileName();
   const out = target.createFile(name, 'application/zip');
-  await out.write(data);
-  const mb = (data.length / 1024 / 1024).toFixed(1);
+  const handle = out.open(FileMode.WriteOnly);
+  const zip = new ZipWriter();
+  try {
+    for (let k = 0; k < files.length; k++) {
+      if (k % 25 === 0) {
+        const mb = (zip.size / 1024 / 1024).toFixed(1);
+        onProgress({ message: `Yedekleniyor ${k}/${files.length} dosya (${mb} MB)`, value: (k / files.length) * 0.98 });
+      }
+      for (const chunk of zip.add(files[k].path, await files[k].file.bytes())) await handle.writeBytes(chunk);
+    }
+    const manifest: Manifest = { app: 'ebook', format: 1, createdAt: new Date().toISOString(), books: bookCount, files: files.length };
+    for (const chunk of zip.add(MANIFEST, new TextEncoder().encode(JSON.stringify(manifest)))) await handle.writeBytes(chunk);
+    onProgress({ message: 'Kaydediliyor…', value: 0.99 });
+    await handle.writeBytes(zip.finish());
+  } catch (e) {
+    handle.close();
+    try {
+      out.delete();
+    } catch {
+      // A half-written file is left; nothing more to do.
+    }
+    throw e;
+  }
+  handle.close();
+  const mb = (zip.size / 1024 / 1024).toFixed(1);
   return `${bookCount} kitap yedeklendi (${mb} MB): ${target.name || 'seçilen klasör'}/${name}`;
 }
 

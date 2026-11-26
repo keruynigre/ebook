@@ -31,6 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
+import { ZipWriter, crc32 } from '../src/lib/zipCore';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
 import { autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
@@ -596,6 +597,23 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.deepEqual(panelRange('high'), [6, 8]);
     assert.ok(chapterCost('saver', 10) > chapterCost('saver'));
     assert.ok(chapterCost('saver') < chapterCost('balanced') && chapterCost('balanced') < chapterCost('high'));
+  });
+
+  await test('zip writer', async () => {
+    assert.equal(crc32(new TextEncoder().encode('123456789')), 0xcbf43926);
+    const w = new ZipWriter();
+    const text = JSON.stringify({ p: ['Wang Lin şöyle dedi: “Gel.”'.repeat(200)] });
+    const pic = new Uint8Array(500).map((_, i) => (i * 7) % 256);
+    const chunks = [...w.add('books/a/chapters/1.json', new TextEncoder().encode(text)), ...w.add('books/a/comic/1/0.jpg', pic), ...w.add('settings.json', new TextEncoder().encode('{}'))];
+    chunks.push(w.finish());
+    const all = new Uint8Array(chunks.reduce((a, c) => a + c.length, 0));
+    let o = 0;
+    for (const c of chunks) all.set(c, (o += c.length) - c.length);
+    assert.ok(all.length < text.length);
+    const zip = await JSZip.loadAsync(all);
+    assert.equal(await zip.file('books/a/chapters/1.json')!.async('string'), text);
+    assert.deepEqual(await zip.file('books/a/comic/1/0.jpg')!.async('uint8array'), pic);
+    assert.equal(await zip.file('settings.json')!.async('string'), '{}');
   });
 
   await test('reading statistics', () => {
