@@ -206,3 +206,17 @@ export function parseChapterInfo(data: any): ChapterInfo {
   if (summaryEn) info.summaryEn = summaryEn;
   return info;
 }
+
+/** At most this many chapters are filled in on their own when the reader moves on. */
+export const AUTO_MAX = 3;
+
+/**
+ * Chapters to fill in on their own after moving to a new chapter: only when the notebook
+ * follows the story from its first chapter and just a few recent ones are missing.
+ * A notebook started mid-story (or far behind) is left to the "Güncelle" button.
+ */
+export function autoChapters(nb: Notebook, missing: number[], upTo: number): number[] {
+  if (!missing.length || missing.length > AUTO_MAX) return [];
+  const fromStart = !!nb.summaries['0'] || upTo < AUTO_MAX;
+  return fromStart ? missing : [];
+}

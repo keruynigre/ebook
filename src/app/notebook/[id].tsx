@@ -138,7 +138,7 @@ export default function NotebookScreen() {
                 : `Defter ${upTo + 1}. bölüme kadar güncel.`}
             </Text>
             <Text style={ui.muted}>
-              Yeni çevrilen bölümler deftere kendiliğinden eklenir. Okuduğun yerden ilerisi gösterilmez.
+              Defter ilk bölümden tutuluyorsa yeni bölüme geçince kendiliğinden güncellenir. Kitaba ortasından başladıysan ya da çok bölüm eksikse “Güncelle”ye bas. Okuduğun yerden ilerisi gösterilmez.
             </Text>
             {missing.length > 0 && <Button title={`Güncelle (${missing.length} bölüm)`} onPress={fill} />}
             {!!job?.error && <Text style={ui.error}>{job.error}</Text>}

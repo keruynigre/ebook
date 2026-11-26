@@ -20,6 +20,7 @@ import { Button, ProgressBar } from '../../../components/ui';
 import { WordBubble, type BubbleTarget } from '../../../components/WordBubble';
 import { startDownload, useDownload } from '../../../lib/downloads';
 import { chapterPosition, saveProgress, useBook } from '../../../lib/library';
+import { autoFillNotebook } from '../../../lib/notebook';
 import { READER_FONTS, type ReaderFont } from '../../../lib/fonts';
 import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../../../lib/settings';
 import { countWords, FINISHED_AT, formatCount } from '../../../lib/readStats';
@@ -123,6 +124,13 @@ export default function Reader() {
       save();
     };
   }, [id, i, save]);
+
+  // Keep the story notebook up to date as the reader moves on (after a short stay, not while flipping through).
+  const notebookLang: 'tr' | 'en' = settings.showTranslation ? 'tr' : 'en';
+  useEffect(() => {
+    const t = setTimeout(() => autoFillNotebook(id, i, notebookLang).catch(() => undefined), 8_000);
+    return () => clearTimeout(t);
+  }, [id, i, notebookLang]);
 
   // Load (or reload, once a translation finishes) the Turkish text.
   useEffect(() => {

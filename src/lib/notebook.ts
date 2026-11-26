@@ -9,7 +9,7 @@ import { GeminiError, analyzeChapters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { chapterNeedsWork, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { autoChapters, chapterNeedsWork, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -122,7 +122,24 @@ export function stopNotebookJob(bookId: string) {
   stopRequested.add(bookId);
 }
 
-export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'en'): Promise<void> {
+/**
+ * Called by the reader on a new chapter: fills in the few chapters the notebook lacks,
+ * but only when it follows the story from the start (see autoChapters).
+ */
+export async function autoFillNotebook(bookId: string, upTo: number, lang: 'tr' | 'en'): Promise<void> {
+  if (jobs.get(bookId)?.running) return;
+  const book = getBook(bookId);
+  const settings = getSettings();
+  if (!book || !settings.geminiModel || !(await getGeminiKey())) return;
+  const nb = await loadNotebook(bookId);
+  // The chapter on screen: its own translation adds the notes when it is being translated.
+  const todo = autoChapters(nb, missingChapters(bookId, nb, upTo, lang), upTo).filter(
+    (i) => i < upTo || lang === 'en' || book.translated?.includes(i),
+  );
+  if (todo.length) await fillNotebook(bookId, upTo, lang, todo);
+}
+
+export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'en', only?: number[]): Promise<void> {
   if (jobs.get(bookId)?.running) return;
   stopRequested.delete(bookId);
   const book = getBook(bookId);
@@ -138,7 +155,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
     });
     return;
   }
-  const todo = missingChapters(bookId, await loadNotebook(bookId), upTo, lang);
+  const todo = only ?? missingChapters(bookId, await loadNotebook(bookId), upTo, lang);
   const job: NotebookJob = {
     running: true,
     done: 0,

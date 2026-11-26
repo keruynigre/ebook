@@ -32,7 +32,7 @@ import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
 import { cardPrompt, castNames, mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
-import { chapterNeedsWork, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { autoChapters, chapterNeedsWork, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -327,6 +327,18 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(noteText(nb.characters[0].notes[0], 'en'), 'Tall.');
     assert.equal(noteText(nb.characters[0].notes[0], 'tr'), 'Uzun boylu.');
     assert.equal(noteText({ chapter: 0, text: 'Sadece Türkçe' }, 'en'), 'Sadece Türkçe');
+  });
+
+  await test('notebook fills itself only when kept from the first chapter', () => {
+    const fromStart = { characters: [], summaries: { '0': 'Başlangıç.' }, summariesEn: {} };
+    const midStory = { characters: [], summaries: { '400': 'Orta.' }, summariesEn: {} };
+    assert.deepEqual(autoChapters(fromStart, [41], 41), [41]);
+    assert.deepEqual(autoChapters(fromStart, [39, 40, 41], 41), [39, 40, 41]);
+    assert.deepEqual(autoChapters(fromStart, [10, 20, 30, 41], 41), []);
+    assert.deepEqual(autoChapters(fromStart, [], 41), []);
+    assert.deepEqual(autoChapters(midStory, [401], 401), []);
+    assert.deepEqual(autoChapters(emptyNotebook(), [0, 1], 1), [0, 1]);
+    assert.deepEqual(autoChapters(emptyNotebook(), [499, 500], 500), []);
   });
 
   await test('old one-language notebook chapters are redone for the reader language', () => {
