@@ -35,6 +35,10 @@ export interface ReaderSettings {
   ttsRate: number;
   /** Auto-scroll speed level (1–20); pixels per second = level × AUTO_PX. */
   autoScrollSpeed: number;
+  /** Look for a newer APK on GitHub when the app starts. */
+  checkUpdates: boolean;
+  /** A newer version the person chose to skip (no banner for it). */
+  skippedUpdate: string;
   /** Cloudflare account for drawing comic panels (Workers AI); the token lives in secure storage. */
   cfAccountId: string;
   hasCfToken: boolean;
@@ -75,6 +79,8 @@ const DEFAULTS: ReaderSettings = {
   ttsVoiceEn: 'en-US-ChristopherNeural',
   ttsRate: 1,
   autoScrollSpeed: 4,
+  checkUpdates: true,
+  skippedUpdate: '',
   cfAccountId: '',
   hasCfToken: false,
   comicColor: false,

@@ -79,7 +79,7 @@ function sentenceAt(text: string, pos: number): string {
 }
 
 export default function Reader() {
-  const { id, index } = useLocalSearchParams<{ id: string; index: string }>();
+  const { id, index, para } = useLocalSearchParams<{ id: string; index: string; para?: string }>();
   const i = parseInt(index, 10) || 0;
   const book = useBook(id);
   const download = useDownload(id);
@@ -366,6 +366,9 @@ export default function Reader() {
   // Scroll events before that (layout, font loading) must not overwrite the saved spot.
   const settledRef = useRef(false);
   const restoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Opened from a search result: go to that paragraph instead of the saved spot.
+  const jumpPara = useRef<number | null>(null);
+  const jumpTries = useRef(0);
   const tryRestore = () => {
     if (restoreTo.current === null || !settledRef.current) return;
     if (restoreTimer.current) clearTimeout(restoreTimer.current);
@@ -373,14 +376,36 @@ export default function Reader() {
       const target = restoreTo.current;
       const { content, view } = sizes.current;
       if (target === null || view <= 0) return;
-      if (content > view && target > 0) scroll.current?.scrollTo({ y: target * (content - view), animated: false });
+      const jp = jumpPara.current !== null ? paraLayout.current[jumpPara.current] : undefined;
+      if (jumpPara.current !== null && !jp && jumpTries.current++ < 20) {
+        // The paragraph is not laid out yet: look again shortly.
+        restoreTimer.current = null;
+        tryRestore();
+        return;
+      }
+      if (jp) {
+        jumpPara.current = null;
+        router.setParams({ para: undefined });
+        scroll.current?.scrollTo({ y: Math.max(0, jp.y - view * 0.25), animated: false });
+      } else if (content > view && target > 0) scroll.current?.scrollTo({ y: target * (content - view), animated: false });
       restoreTo.current = null;
     }, 150);
   };
   useEffect(() => {
     settledRef.current = textSettled;
     if (textSettled) tryRestore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textSettled, shown]);
+  useEffect(() => {
+    const k = para !== undefined ? parseInt(para, 10) : NaN;
+    if (Number.isFinite(k)) {
+      jumpPara.current = k;
+      jumpTries.current = 0;
+      restoreTo.current = restoreTo.current ?? 0;
+      tryRestore();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [para, i]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (restoreTo.current !== null) return;
@@ -910,6 +935,7 @@ export default function Reader() {
         palette={BUBBLE[settings.theme]}
         onClose={() => setBubble(null)}
         onReadHere={bubble ? () => readFrom(bubble.para) : undefined}
+        source={{ bookId: id, bookTitle: book?.title, chapter: i }}
       />
 
       {(narrActive || (narr.bookId === id && !!narr.message)) && (

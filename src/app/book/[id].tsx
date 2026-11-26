@@ -174,11 +174,21 @@ export default function BookScreen() {
           style={{ flex: 1 }}
         />
       </View>
-      <Button
-        title="📊 Okuma istatistiği"
-        variant="secondary"
-        onPress={() => router.push({ pathname: '/stats/[id]', params: { id: book.id } })}
-      />
+      <View style={ui.row}>
+        <Button
+          title="🔍 Kitapta ara"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/search/[id]', params: { id: book.id } })}
+          style={{ flex: 1 }}
+        />
+        <Button
+          title="📊 İstatistik"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/stats/[id]', params: { id: book.id } })}
+          style={{ flex: 1 }}
+        />
+      </View>
+      <Button title="📒 Kelime defteri" variant="secondary" onPress={() => router.push('/words')} />
 
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>İndirme ve çeviri</Text>

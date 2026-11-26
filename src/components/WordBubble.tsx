@@ -3,6 +3,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View, useWindowD
 
 import { lookupWord, type WordMeaning } from '../lib/dictionary';
 import { colors } from '../lib/theme';
+import { removeWord, saveWord, useWords, wordKey } from '../lib/wordbook';
 
 export interface BubbleTarget {
   word: string;
@@ -26,12 +27,16 @@ export function WordBubble({
   palette,
   onClose,
   onReadHere,
+  source,
 }: {
   target: BubbleTarget | null;
   palette: Palette;
   onClose: () => void;
   onReadHere?: () => void;
+  /** Where the word was met, kept with it in the word notebook. */
+  source?: { bookId: string; bookTitle?: string; chapter: number };
 }) {
+  const saved = useWords();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const [result, setResult] = useState<{ key: string; meaning?: WordMeaning; error?: string } | null>(null);
   const key = target ? `${target.lang}:${target.word}:${target.sentence}` : '';
@@ -54,6 +59,21 @@ export function WordBubble({
   const below = target.y < screenH * 0.55;
   const arrowLeft = Math.max(14, Math.min(width - 26, target.x - left - 6));
   const m = current?.meaning;
+  const isSaved = saved.some((w) => wordKey(w) === wordKey(target));
+  const meaningText = m ? m.translation || m.senses.flatMap((x) => x.items).slice(0, 3).join(', ') : '';
+  const toggleSave = () => {
+    if (isSaved) removeWord(target).catch(() => undefined);
+    else
+      saveWord({
+        word: target.word,
+        lang: target.lang,
+        meaning: meaningText,
+        sentence: target.sentence,
+        bookId: source?.bookId,
+        bookTitle: source?.bookTitle,
+        chapter: source?.chapter,
+      }).catch(() => undefined);
+  };
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -97,7 +117,12 @@ export function WordBubble({
           </View>
         )}
         <View style={styles.foot}>
-          <Text style={{ color: palette.muted, fontSize: 11 }}>{m?.source ?? ''}</Text>
+          <Text style={{ color: palette.muted, fontSize: 11, flex: 1 }}>{m?.source ?? ''}</Text>
+          <Pressable onPress={toggleSave} hitSlop={8} style={{ marginRight: onReadHere ? 16 : 0 }} disabled={!m && !isSaved}>
+            <Text style={{ color: !m && !isSaved ? palette.muted : colors.accent, fontSize: 13, fontWeight: '700' }}>
+              {isSaved ? '★ Kaydedildi' : '☆ Kaydet'}
+            </Text>
+          </Pressable>
           {onReadHere && (
             <Pressable onPress={onReadHere} hitSlop={8}>
               <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>▶ Buradan oku</Text>

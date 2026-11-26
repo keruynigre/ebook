@@ -33,6 +33,8 @@ import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictio
 import { tokenize } from '../src/lib/words';
 import { ZipWriter, crc32 } from '../src/lib/zipCore';
 import { multipartBody } from '../src/lib/multipart';
+import { searchParagraphs } from '../src/lib/searchCore';
+import { compareVersions, versionFromTag } from '../src/lib/updateCore';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
 import { autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
@@ -598,6 +600,25 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.deepEqual(panelRange('high'), [6, 8]);
     assert.ok(chapterCost('saver', 10) > chapterCost('saver'));
     assert.ok(chapterCost('saver') < chapterCost('balanced') && chapterCost('balanced') < chapterCost('high'));
+  });
+
+  await test('update versions', () => {
+    assert.equal(versionFromTag('v1.0.21-build.41'), '1.0.21');
+    assert.ok(compareVersions('1.0.22', '1.0.21') > 0);
+    assert.ok(compareVersions('1.0.9', '1.0.10') < 0);
+    assert.equal(compareVersions('1.0.21', '1.0.21'), 0);
+  });
+
+  await test('search in chapters', () => {
+    const paras = ['Wang Lin baktı.', 'İhtiyar adam, "Tie Zhu!" diye bağırdı ve köye doğru yürüdü.', 'Hiçbir şey.'];
+    const hits = searchParagraphs(paras, 'tie zhu', 'tr', 10);
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].para, 1);
+    assert.equal(hits[0].snippet.slice(hits[0].start, hits[0].start + hits[0].length), 'Tie Zhu');
+    assert.ok(hits[0].snippet.startsWith('…') && hits[0].snippet.endsWith('…'));
+    assert.equal(searchParagraphs(paras, 'ihtiyar', 'tr').length, 1);
+    assert.equal(searchParagraphs(['In the sect.'], 'in', 'en').length, 1);
+    assert.equal(searchParagraphs(paras, 'a', 'tr').length, 0);
   });
 
   await test('multipart body', () => {

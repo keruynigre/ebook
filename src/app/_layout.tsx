@@ -10,13 +10,16 @@ import { FONT_FILES } from '../lib/fonts';
 import { refreshLibrary } from '../lib/library';
 import { loadSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
+import { checkOnStart } from '../lib/updates';
 
 export default function RootLayout() {
   // Reader fonts load in the background; text uses the system font until they are ready.
   useFonts(FONT_FILES);
   useEffect(() => {
     refreshLibrary().catch(() => undefined);
-    loadSettings().catch(() => undefined);
+    loadSettings()
+      .then(checkOnStart)
+      .catch(() => undefined);
   }, []);
 
   return (
@@ -38,6 +41,8 @@ export default function RootLayout() {
           <Stack.Screen name="read/[id]/[index]" options={{ title: '' }} />
           <Stack.Screen name="notebook/[id]" options={{ title: 'Hikâye defteri' }} />
           <Stack.Screen name="stats/[id]" options={{ title: 'Okuma istatistiği' }} />
+          <Stack.Screen name="search/[id]" options={{ title: 'Kitapta ara' }} />
+          <Stack.Screen name="words" options={{ title: 'Kelime defteri' }} />
         </Stack>
         <BrowserHost />
       </View>

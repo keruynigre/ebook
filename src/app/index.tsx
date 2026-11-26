@@ -4,6 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, ui } from '../components/ui';
+import { UpdateBanner } from '../components/UpdateCard';
 import { useLibrary } from '../lib/library';
 import { bookSize, coverFile, formatSize } from '../lib/storage';
 import { colors } from '../lib/theme';
@@ -51,6 +52,7 @@ export default function Library() {
         options={{
           headerRight: () => (
             <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button small variant="secondary" title="📒" onPress={() => router.push('/words')} />
               <Button small variant="secondary" title="Ayarlar" onPress={() => router.push('/settings')} />
               <Button small title="+ Ekle" onPress={() => router.push('/add')} />
             </View>
@@ -61,6 +63,7 @@ export default function Library() {
         data={books}
         keyExtractor={(b) => b.id}
         renderItem={({ item }) => <BookRow book={item} />}
+        ListHeaderComponent={<UpdateBanner />}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 16 + insets.bottom }}
         ListEmptyComponent={
           loaded ? (

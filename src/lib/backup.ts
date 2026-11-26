@@ -9,6 +9,7 @@ import JSZip from 'jszip';
 
 import { refreshLibrary } from './library';
 import { loadSettings } from './settings';
+import { reloadWords } from './wordbook';
 import { ZipWriter } from './zipCore';
 
 const MANIFEST = 'ebook-backup.json';
@@ -49,6 +50,8 @@ export async function createBackup(onProgress: (p: BackupProgress) => void): Pro
   if (books.exists) collect(books, 'books/', files);
   const settings = new File(Paths.document, 'settings.json');
   if (settings.exists) files.push({ file: settings, path: 'settings.json' });
+  const words = new File(Paths.document, 'words.json');
+  if (words.exists) files.push({ file: words, path: 'words.json' });
   const bookCount = books.exists ? books.list().filter((e) => e instanceof Directory).length : 0;
   if (!bookCount) throw new Error('Kitaplıkta yedeklenecek kitap yok.');
 
@@ -97,7 +100,7 @@ export async function restoreBackup(onProgress: (p: BackupProgress) => void): Pr
   const entries = Object.values(zip.files).filter((f) => !f.dir && f.name !== MANIFEST);
   // Only our own folders: never write outside books/ or over anything but settings.json.
   const safe = entries.filter(
-    (f) => (f.name.startsWith('books/') || f.name === 'settings.json') && !f.name.split('/').some((s) => s === '..' || s === ''),
+    (f) => (f.name.startsWith('books/') || f.name === 'settings.json' || f.name === 'words.json') && !f.name.split('/').some((s) => s === '..' || s === ''),
   );
   for (let k = 0; k < safe.length; k++) {
     if (k % 50 === 0) onProgress({ message: `Geri yükleniyor ${k}/${safe.length}`, value: 0.1 + (k / safe.length) * 0.85 });
@@ -107,6 +110,7 @@ export async function restoreBackup(onProgress: (p: BackupProgress) => void): Pr
     await new File(dir, parts[parts.length - 1]).write(await safe[k].async('uint8array'));
   }
   await loadSettings();
+  await reloadWords();
   await refreshLibrary();
   return `${manifest.books} kitap geri yüklendi (yedek tarihi: ${new Date(manifest.createdAt).toLocaleString('tr-TR')}).`;
 }

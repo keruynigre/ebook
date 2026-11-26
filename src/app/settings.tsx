@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { CloudflareCard } from '../components/CloudflareCard';
+import { UpdateCard } from '../components/UpdateCard';
 import { Button, Card, ProgressBar, ui } from '../components/ui';
 import { createBackup, restoreBackup, type BackupProgress } from '../lib/backup';
 import { DEFAULT_TRANSLATION_PROMPT, listModels, type GeminiModel } from '../lib/gemini';
@@ -98,6 +99,8 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={ui.screen} contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
+      <UpdateCard />
+
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>Türkçe çeviri (Gemini)</Text>
         <Text style={ui.muted}>
@@ -274,7 +277,7 @@ export default function SettingsScreen() {
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>Yedekleme</Text>
         <Text style={ui.muted}>
-          Bütün kitaplar (bölümler, çeviriler, kaldığın yerler, terim sözlükleri) ve ayarlar tek bir .zip dosyasına
+          Bütün kitaplar (bölümler, çeviriler, resimler, kaldığın yerler, terim sözlükleri), kelime defteri ve ayarlar tek bir .zip dosyasına
           yazılır. İndirilenler gibi bir klasör seçin; telefon değiştirince ya da uygulamayı yeniden kurunca bu dosyadan
           geri yükleyebilirsiniz. Gemini anahtarı güvenlik için yedeğe girmez.
         </Text>
