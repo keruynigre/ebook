@@ -13,9 +13,9 @@ const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
 
 /** Settings card for the Cloudflare Workers AI token that draws comic panels. */
 const QUALITIES: { id: ComicQuality; label: string; note: string }[] = [
-  { id: 'high', label: 'Yüksek', note: '1024×768, bölüm başına 12-15 kare.' },
-  { id: 'balanced', label: 'Dengeli', note: '768×576, bölüm başına 10-12 kare; telefonda fark çok az.' },
-  { id: 'saver', label: 'Tasarruflu', note: '640×480, bölüm başına 8-10 kare; çizgiler biraz yumuşar.' },
+  { id: 'high', label: 'Yüksek', note: '1024×768, bölüm başına 6-8 resim.' },
+  { id: 'balanced', label: 'Dengeli', note: '768×576, bölüm başına 4-6 resim; telefonda fark çok az.' },
+  { id: 'saver', label: 'Tasarruflu', note: '640×480, bölüm başına 3-4 resim; çizgiler biraz yumuşar.' },
 ];
 
 export function CloudflareCard() {
@@ -62,8 +62,9 @@ export function CloudflareCard() {
     <Card style={{ gap: 10 }}>
       <Text style={ui.h2}>Resimli okuma (Cloudflare)</Text>
       <Text style={ui.muted}>
-        Okuyucudaki resim düğmesi bölümü siyah-beyaz çizgi romana çevirir: Gemini sahneleri ve konuşmaları seçer,
-        Cloudflare’ın FLUX modeli kareleri çizer. Ücretsiz hesapta günlük çizim hakkı sınırlıdır.
+        Okuyucudaki resim düğmesi açıkken bölümün önemli anlarına (özellikle ana karakterin ve önemli karakterlerin
+        konuşmalarına) yazının içinde resim eklenir: Gemini anları seçer, Cloudflare’ın FLUX modeli çizer. Resme basılı
+        tutarak yeniden çizdirebilirsin. Ücretsiz hesapta günlük çizim hakkı sınırlıdır.
       </Text>
       <Text style={ui.text}>
         {settings.hasCfToken && settings.cfAccountId ? '✓ Cloudflare anahtarı kayıtlı.' : 'Henüz Cloudflare anahtarı yok.'}

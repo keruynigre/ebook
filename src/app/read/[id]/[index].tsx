@@ -1,5 +1,5 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -18,9 +18,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChapterSheet } from '../../../components/ChapterSheet';
+import { InlinePicture } from '../../../components/InlinePicture';
 import { ReaderParagraph, type WordTap } from '../../../components/ReaderParagraph';
 import { Button, ProgressBar } from '../../../components/ui';
 import { WordBubble, type BubbleTarget } from '../../../components/WordBubble';
+import { ensureComic, loadComicScript, panelFile, redoChapter, redrawPanel, stopComics, useComicJob, useComicVersion, type ComicScript } from '../../../lib/comic';
+import { panelSlots } from '../../../lib/comicCore';
 import { startDownload, useDownload } from '../../../lib/downloads';
 import { chapterPosition, getBook, saveProgress, useBook } from '../../../lib/library';
 import { autoFillNotebook } from '../../../lib/notebook';
@@ -46,6 +49,7 @@ import { VOICES, voiceName } from '../../../lib/tts/voices';
 const SAVE_EVERY_MS = 1500;
 const LISTEN_ICON = require('../../../../assets/icons/listen.png');
 const COMIC_ICON = require('../../../../assets/icons/comic.png');
+const BACK_ICON = require('../../../../assets/icons/back.png');
 const PLAY_ICON = require('../../../../assets/icons/play.png');
 const PAUSE_ICON = require('../../../../assets/icons/pause.png');
 const PREV_ICON = require('../../../../assets/icons/prev.png');
@@ -82,7 +86,7 @@ export default function Reader() {
   // Custom fonts carry their own bold file; the system font uses fontWeight.
   const titleFont = font.bold ? { fontFamily: font.bold } : { fontWeight: '700' as const };
   const insets = useSafeAreaInsets();
-  const winH = useWindowDimensions().height;
+  const { height: winH, width: winW } = useWindowDimensions();
 
   const scroll = useRef<ScrollViewInstance>(null);
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
@@ -175,6 +179,52 @@ export default function Reader() {
     }, 1_500);
     return () => clearTimeout(t);
   }, [id, i, settings.translateOnOpen, settings.showTranslation, settings.hasGeminiKey]);
+
+  // Pictures of the key moments, inside the text (setting "illustrate", 🖼 in the top bar).
+  const drawReady = settings.hasCfToken && !!settings.cfAccountId && settings.hasGeminiKey;
+  const illustrate = settings.illustrate && drawReady;
+  const comicJob = useComicJob(id, i);
+  const comicV = useComicVersion();
+  const [pictures, setPictures] = useState<{ index: number; script: ComicScript | null }>({ index: -1, script: null });
+  useEffect(() => {
+    if (!illustrate) return;
+    let alive = true;
+    loadComicScript(id, i).then((sc) => alive && setPictures({ index: i, script: sc }));
+    return () => {
+      alive = false;
+    };
+  }, [id, i, comicV, illustrate]);
+  useEffect(() => {
+    if (!illustrate) return;
+    // Start after a short stay, so flipping through chapters does not spend the drawing allowance.
+    const t = setTimeout(() => {
+      if (getBook(id)?.downloaded.includes(i)) ensureComic(id, i);
+    }, 3_000);
+    return () => clearTimeout(t);
+  }, [id, i, illustrate]);
+  // Draw the next chapter ahead once this one is finished.
+  useEffect(() => {
+    const b = getBook(id);
+    if (illustrate && comicJob && !comicJob.running && !comicJob.error && comicJob.total > 0 && comicJob.done === comicJob.total && b?.downloaded.includes(i + 1)) {
+      ensureComic(id, i + 1);
+    }
+  }, [illustrate, comicJob, id, i]);
+  const toggleIllustrate = () => {
+    if (!drawReady) {
+      Alert.alert('Resimler için anahtar gerekli', 'Bölümün önemli anlarına resim eklemek için Ayarlar’dan Cloudflare ve Gemini anahtarlarını girin.', [
+        { text: 'Vazgeç', style: 'cancel' },
+        { text: 'Ayarlara git', onPress: () => router.push('/settings') },
+      ]);
+      return;
+    }
+    setSettings({ illustrate: !settings.illustrate });
+  };
+  const pictureMenu = (p: number) =>
+    Alert.alert('Resim', 'Beğenmediysen yeniden çizilebilir (günlük çizim hakkından düşer).', [
+      { text: 'Vazgeç', style: 'cancel' },
+      { text: 'Bölümün resimlerini baştan seç', onPress: () => redoChapter(id, i) },
+      { text: 'Bu resmi yeniden çiz', onPress: () => redrawPanel(id, i, p) },
+    ]);
 
   // Keep the story notebook up to date as the reader moves on (after a short stay, not while flipping through).
   const notebookLang: 'tr' | 'en' = settings.showTranslation ? 'tr' : 'en';
@@ -362,6 +412,12 @@ export default function Reader() {
     );
   };
 
+  const slots = useMemo(
+    () =>
+      illustrate && pictures.index === i && pictures.script && shown ? panelSlots(pictures.script, shown.paragraphs.length) : new Map<number, number[]>(),
+    [illustrate, pictures, i, shown],
+  );
+
   const translateBox = chapter && !isTranslated && (
     <View style={{ gap: 6, marginTop: 4, marginBottom: 14 }}>
         {settings.hasGeminiKey ? (
@@ -490,18 +546,48 @@ export default function Reader() {
           </Text>
           {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
           {translateBox}
+          {illustrate && (comicJob?.running || !!comicJob?.error) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <Text style={{ flex: 1, color: comicJob?.error ? colors.danger : theme.muted, fontSize: 13 }} numberOfLines={2}>
+                {comicJob?.error
+                  ? `Resimler: ${comicJob.error}`
+                  : `Resimler: ${comicJob?.message ?? ''}${comicJob?.total ? ` · ${comicJob.done}/${comicJob.total}` : ''}`}
+              </Text>
+              {comicJob?.running ? (
+                <Pressable onPress={stopComics} hitSlop={8}>
+                  <Text style={{ color: theme.muted, fontSize: 13, fontWeight: '700' }}>Durdur</Text>
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => ensureComic(id, i)} hitSlop={8}>
+                  <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>Tekrar dene</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
           {shown?.paragraphs.map((p, k) => (
-            <ReaderParagraph
-              key={k}
-              index={k}
-              text={p}
-              style={/^[*\s~=\-–—•·]{3,}$/.test(p) ? centerStyle : paraStyle}
-              hlStart={highlightOn && narr.para === k ? narr.start : -1}
-              hlEnd={highlightOn && narr.para === k ? narr.end : -1}
-              hlColor={colors.accent + '66'}
-              onWord={onWord}
-              onLayout={onParaLayout}
-            />
+            <Fragment key={k}>
+              <ReaderParagraph
+                index={k}
+                text={p}
+                style={/^[*\s~=\-–—•·]{3,}$/.test(p) ? centerStyle : paraStyle}
+                hlStart={highlightOn && narr.para === k ? narr.start : -1}
+                hlEnd={highlightOn && narr.para === k ? narr.end : -1}
+                hlColor={colors.accent + '66'}
+                onWord={onWord}
+                onLayout={onParaLayout}
+              />
+              {slots.get(k)?.map((n) => (
+                <InlinePicture
+                  key={`pic${n}`}
+                  uri={panelFile(id, i, n).exists ? panelFile(id, i, n).uri : null}
+                  width={winW - 44}
+                  version={comicV}
+                  waiting={!!comicJob?.running}
+                  border={theme.muted + '66'}
+                  onLongPress={() => pictureMenu(n)}
+                />
+              ))}
+            </Fragment>
           ))}
 
           {!!shown?.notes?.length && (
@@ -556,22 +642,19 @@ export default function Reader() {
             ]}
           >
             <Pressable onPress={() => router.back()} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Geri">
-              <Text style={{ color: theme.text, fontSize: 24 }}>←</Text>
+              <Image source={BACK_ICON} style={{ width: 22, height: 22, tintColor: theme.text }} />
             </Pressable>
             <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700', flex: 1, marginLeft: 6 }} numberOfLines={1}>
               {total ? `${i + 1} / ${total}` : ''}
             </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Pressable
-                  onPress={() => {
-                    save();
-                    router.push(`/comic/${id}/${i}`);
-                  }}
+                  onPress={toggleIllustrate}
                   hitSlop={10}
-                  style={{ paddingHorizontal: 6 }}
-                  accessibilityLabel="Resimli oku"
+                  style={{ paddingHorizontal: 6, opacity: illustrate ? 1 : 0.45 }}
+                  accessibilityLabel={illustrate ? 'Resimleri kapat' : 'Resimleri aç'}
                 >
-                  <Image source={COMIC_ICON} style={{ width: 24, height: 24, tintColor: theme.text }} />
+                  <Image source={COMIC_ICON} style={{ width: 24, height: 24, tintColor: illustrate ? colors.accent : theme.text }} />
                 </Pressable>
                 <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
                   <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>

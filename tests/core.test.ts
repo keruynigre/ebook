@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
-import { cardPrompt, castNames, mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
+import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
 import { autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
@@ -567,8 +567,31 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(dropTurkishNames(nb), nb);
   });
 
+  await test('pictures are placed under their paragraphs', () => {
+    const { script } = parseComicScript(
+      2,
+      {
+        panels: [
+          { paragraph: 30, scene: 'Later.', characters: [] },
+          { paragraph: 3, scene: 'Chu Yang speaks.', characters: ['Chu Yang'] },
+          { paragraph: 99, scene: 'Past the end.', characters: [] },
+        ],
+        cast: [],
+      },
+      40,
+    );
+    assert.deepEqual(script.panels.map((p) => p.para), [3, 30, 39]);
+    const slots = panelSlots(script, 40);
+    assert.deepEqual([...slots.entries()], [[3, [0]], [30, [1]], [39, [2]]]);
+    // Older scripts without paragraph numbers are spread over the chapter.
+    const old = panelSlots({ chapter: 1, panels: [{ scene: 'a', characters: [], bubbles: [] }, { scene: 'b', characters: [], bubbles: [] }, { scene: 'c', characters: [], bubbles: [] }] }, 8);
+    assert.deepEqual([...old.entries()], [[2, [0]], [4, [1]], [6, [2]]]);
+    const req = comicRequest('Kitap', 'Bölüm 3', ['İlk.', 'İkinci.'], {}, [], ['Wang Lin', 'Zhang']);
+    assert.ok(req.includes('[1] İkinci.') && req.includes('Wang Lin, Zhang'));
+  });
+
   await test('comic quality presets', () => {
-    assert.match(comicSystem([8, 10]), /"panels": 8 to 10 panels/);
+    assert.match(comicSystem([3, 4]), /"panels": 3 to 4 pictures/);
     assert.ok(chapterCost('saver') < chapterCost('balanced') && chapterCost('balanced') < chapterCost('high'));
   });
 

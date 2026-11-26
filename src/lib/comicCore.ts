@@ -16,6 +16,8 @@ export interface ComicPanel {
   /** Characters visible in the picture (names as in the cast). */
   characters: string[];
   bubbles: ComicBubble[];
+  /** Paragraph (0-based) the picture is shown under in the reader; missing in scripts made for the old comic screen. */
+  para?: number;
 }
 
 export interface ComicScript {
@@ -41,7 +43,7 @@ const MAX_PROMPT = 1900;
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
 /** Parse Gemini's answer; drops empty panels and fills in missing language with the other one. */
-export function parseComicScript(chapter: number, data: any): { script: ComicScript; cast: ComicCast } {
+export function parseComicScript(chapter: number, data: any, paragraphs = 0): { script: ComicScript; cast: ComicCast } {
   const cast: ComicCast = {};
   for (const c of Array.isArray(data?.cast) ? data.cast : []) {
     const name = str(c?.name);
@@ -61,9 +63,29 @@ export function parseComicScript(chapter: number, data: any): { script: ComicScr
       const kind: BubbleKind = b?.kind === 'thought' || b?.kind === 'narration' ? b.kind : 'speech';
       bubbles.push({ kind, speaker: kind === 'narration' ? '' : str(b?.speaker), tr: tr || en, en: en || tr });
     }
-    panels.push({ scene, characters, bubbles: bubbles.slice(0, 4) });
+    const panel: ComicPanel = { scene, characters, bubbles: bubbles.slice(0, 4) };
+    const para = typeof p?.paragraph === 'number' ? Math.round(p.paragraph) : NaN;
+    if (Number.isFinite(para)) panel.para = Math.max(0, paragraphs ? Math.min(paragraphs - 1, para) : para);
+    panels.push(panel);
   }
+  // Pictures in reading order.
+  if (panels.every((x) => x.para !== undefined)) panels.sort((a, b) => a.para! - b.para!);
   return { script: { chapter, panels: panels.slice(0, 20) }, cast };
+}
+
+/**
+ * Where each picture goes in the text: paragraph index → panel indexes shown under it.
+ * Older scripts without paragraph numbers are spread evenly over the chapter.
+ */
+export function panelSlots(script: ComicScript, paragraphs: number): Map<number, number[]> {
+  const out = new Map<number, number[]>();
+  const n = script.panels.length;
+  if (!n || paragraphs <= 0) return out;
+  script.panels.forEach((p, k) => {
+    const at = p.para !== undefined ? Math.min(paragraphs - 1, p.para) : Math.min(paragraphs - 1, Math.floor(((k + 1) * paragraphs) / (n + 1)));
+    out.set(at, [...(out.get(at) ?? []), k]);
+  });
+  return out;
 }
 
 /** Known looks win: a character keeps the look first given to them. */
@@ -149,9 +171,9 @@ export type ComicQuality = 'high' | 'balanced' | 'saver';
  * output tile, 5.4 per input tile), so smaller panels and fewer references cost less.
  */
 export const COMIC_QUALITY: Record<ComicQuality, { width: number; height: number; refs: number; panels: [number, number] }> = {
-  high: { width: 1024, height: 768, refs: 4, panels: [12, 15] },
-  balanced: { width: 768, height: 576, refs: 3, panels: [10, 12] },
-  saver: { width: 640, height: 480, refs: 2, panels: [8, 10] },
+  high: { width: 1024, height: 768, refs: 4, panels: [6, 8] },
+  balanced: { width: 768, height: 576, refs: 3, panels: [4, 6] },
+  saver: { width: 640, height: 480, refs: 2, panels: [3, 4] },
 };
 
 /** Rough neurons for one chapter (panels only; character cards come on top, once per character). */
@@ -162,15 +184,15 @@ export function chapterCost(q: ComicQuality): number {
   return Math.round(perPanel * ((c.panels[0] + c.panels[1]) / 2));
 }
 
-/** The script instructions, asking for `panels` (min, max) panels. */
-export const comicSystem = (panels: [number, number] = [12, 15]) => COMIC_SYSTEM.replace('12 to 15 panels', `${panels[0]} to ${panels[1]} panels`);
+/** The script instructions, asking for `panels` (min, max) pictures. */
+export const comicSystem = (panels: [number, number] = [4, 6]) => COMIC_SYSTEM.replace('4 to 6 pictures', `${panels[0]} to ${panels[1]} pictures`);
 
-export const COMIC_SYSTEM = `You turn a chapter of a Chinese wuxia/xianxia web novel into a black-and-white comic (webtoon) script.
-Return JSON with:
-- "panels": 12 to 15 panels that tell the chapter's main events in order. For each panel:
-  - "scene": one English paragraph describing ONLY what is visible: setting, camera shot (close-up, wide shot, low angle…), characters' poses, actions and expressions, lighting. Do not describe looks of named characters here beyond clothing changes; never ask for written text.
-  - "characters": names of the named characters visible in the panel (max 3), exactly as in the cast.
-  - "bubbles": 0 to 3 lines from the chapter for this moment: {"kind": "speech" | "thought" | "narration", "speaker": name (empty for narration), "tr": Turkish, "en": English}. Keep each line short (max ~20 words); use the novel's own dialogue where possible.
+export const COMIC_SYSTEM = `You choose the moments of a Chinese wuxia/xianxia web novel chapter that get an illustration inside the text, like the pictures in an illustrated novel.
+The chapter is given as numbered paragraphs ("[12] ..."). Return JSON with:
+- "panels": 4 to 6 pictures for the most important moments, in reading order. Prefer moments where the main character or other important characters (see the list given) speak or face each other: key dialogue, confrontations, revelations, strong emotions, fights. Do not pick minor characters' small talk or transitions. Spread the pictures over the chapter. For each picture:
+  - "paragraph": the number of the paragraph the picture belongs under (usually the key line of dialogue or the action shown).
+  - "scene": one English paragraph describing ONLY what is visible at that moment: setting, camera shot (close-up, medium shot, wide shot…), characters' poses, actions and facial expressions (who is speaking and how), lighting. Do not describe looks of named characters here beyond clothing changes; never ask for written text.
+  - "characters": names of the named characters visible in the picture (max 3), exactly as in the cast.
 - "cast": for every named character in "panels" who is NOT in the known cast: {"name", "look"} where "look" is a fixed English visual description (gender, age, build, face, hairstyle, eyes, typical clothing, notable items), 25-45 words, based on the novel and the notes given. Do not repeat characters already in the known cast.
 Use the same spelling of names everywhere. Answer only with the JSON.`;
 
@@ -182,23 +204,11 @@ export const COMIC_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: {
+          paragraph: { type: 'INTEGER' },
           scene: { type: 'STRING' },
           characters: { type: 'ARRAY', items: { type: 'STRING' } },
-          bubbles: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                kind: { type: 'STRING', enum: ['speech', 'thought', 'narration'] },
-                speaker: { type: 'STRING' },
-                tr: { type: 'STRING' },
-                en: { type: 'STRING' },
-              },
-              required: ['kind', 'tr', 'en'],
-            },
-          },
         },
-        required: ['scene', 'characters', 'bubbles'],
+        required: ['paragraph', 'scene', 'characters'],
       },
     },
     cast: {
@@ -210,15 +220,16 @@ export const COMIC_SCHEMA = {
 };
 
 export const COMIC_HINT =
-  '\n\nAnswer format: {"panels": [{"scene": string, "characters": [string], "bubbles": [{"kind": "speech"|"thought"|"narration", "speaker": string, "tr": string, "en": string}]}], "cast": [{"name": string, "look": string}]}';
+  '\n\nAnswer format: {"panels": [{"paragraph": number, "scene": string, "characters": [string]}], "cast": [{"name": string, "look": string}]}';
 
 /** User prompt for one chapter. */
 export function comicRequest(
   bookTitle: string,
   title: string,
-  text: string,
+  paragraphs: string[],
   cast: ComicCast,
   notes: { name: string; note: string }[],
+  important: string[] = [],
 ): string {
   const known = Object.entries(cast)
     .slice(0, 80)
@@ -234,9 +245,15 @@ Chapter: ${title}
 Known cast (keep these names; do not describe them again):
 ${known || '(none yet)'}
 
+Most important characters of the story so far (main character first):
+${important.join(', ') || '(unknown; judge from the chapter)'}
+
 Notes about characters so far:
 ${facts || '(none)'}
 
-Chapter text:
-${text.slice(0, 60_000)}`;
+Chapter paragraphs:
+${paragraphs
+  .map((p, k) => `[${k}] ${p}`)
+  .join('\n')
+  .slice(0, 60_000)}`;
 }

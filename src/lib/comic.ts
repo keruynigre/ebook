@@ -1,6 +1,7 @@
 /**
- * Comic pages for a chapter: Gemini writes a panel script (scenes + dialogue),
- * Cloudflare FLUX draws each panel. Everything is saved under the book so a
+ * Pictures inside the text of a chapter: Gemini picks the key moments (mostly the
+ * important characters' dialogue) and the paragraph each belongs under,
+ * Cloudflare FLUX draws them. Everything is saved under the book so a
  * chapter is drawn only once. One chapter is drawn at a time.
  */
 import { File, Paths } from 'expo-file-system';
@@ -230,7 +231,14 @@ async function writeScript(bookId: string, index: number, update: (j: Partial<Co
       return { name: c.name, note: known.map((n) => n.en || n.text).slice(-3).join(' ') };
     })
     .filter((x) => x.note);
-  const prompt = comicRequest(book.title, chapter.title, chapter.paragraphs.join('\n'), cast, notes);
+  // The characters seen in the most chapters so far: the main character and the important ones.
+  const important = nb.characters
+    .filter((c) => c.firstChapter <= index)
+    .map((c) => ({ name: c.name, n: c.seenIn.filter((k) => k <= index).length }))
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 8)
+    .map((c) => c.name);
+  const prompt = comicRequest(book.title, chapter.title, chapter.paragraphs, cast, notes, important);
   const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
   let refreshed = false;
   let unreadable = 0;
@@ -251,7 +259,7 @@ async function writeScript(bookId: string, index: number, update: (j: Partial<Co
     try {
       update({ message: 'Sahneler seçiliyor (Gemini)…' });
       const data = await generateJson(key, choice.model, comicSystem(COMIC_QUALITY[settings.comicQuality ?? 'balanced'].panels), prompt, COMIC_SCHEMA, COMIC_HINT);
-      const { script, cast: found } = parseComicScript(index, data);
+      const { script, cast: found } = parseComicScript(index, data, chapter.paragraphs.length);
       if (!script.panels.length) throw new GeminiError('Gemini sahne döndürmedi.', 'other');
       await comicCastFile(bookId).write(JSON.stringify(mergeCast(cast, found)));
       await scriptFile(bookId, index).write(JSON.stringify(script));

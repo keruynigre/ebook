@@ -38,6 +38,8 @@ export interface ReaderSettings {
   hasCfToken: boolean;
   /** Comic panels in colour instead of black and white. */
   comicColor: boolean;
+  /** Show pictures of the key moments inside the text (drawn with Cloudflare). */
+  illustrate: boolean;
   /** Panel size and number of references: smaller costs fewer Cloudflare neurons. */
   comicQuality: ComicQuality;
   /** Whether an art style picture was chosen for the comic (saved as comic-style.jpg). */
@@ -71,6 +73,7 @@ const DEFAULTS: ReaderSettings = {
   cfAccountId: '',
   hasCfToken: false,
   comicColor: false,
+  illustrate: false,
   comicQuality: 'balanced',
   comicStyleRef: false,
   comicStyleVersion: 0,
