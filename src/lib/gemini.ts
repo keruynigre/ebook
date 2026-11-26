@@ -332,6 +332,42 @@ export function mergeGlossary(glossary: GlossaryEntry[], add: GlossaryEntry[]): 
   return out;
 }
 
+/** One JSON answer from Gemini, trying plainer request shapes when a model rejects an option. */
+export async function generateJson(key: string, model: string, system: string, prompt: string, schema: object, hint: string): Promise<any> {
+  const modelPath = model.startsWith('models/') ? model : `models/${model}`;
+  let r: any;
+  for (let level = requestLevel.get(modelPath) ?? 0; ; level++) {
+    if (level >= REQUEST_LEVELS.length) throw new GeminiError(`${modelPath.replace(/^models\//, '')} bu isteği desteklemiyor.`, 'unsupported');
+    const o = REQUEST_LEVELS[level];
+    const generationConfig: Record<string, unknown> = { temperature: 0.3 };
+    if (o.json) generationConfig.responseMimeType = 'application/json';
+    if (o.schema) generationConfig.responseSchema = schema;
+    if (o.noThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    const body: Record<string, unknown> = {
+      contents: [{ role: 'user', parts: [{ text: (o.system ? prompt : `${system}\n\n---\n\n${prompt}`) + (o.schema ? '' : hint) }] }],
+      generationConfig,
+    };
+    if (o.system) body.systemInstruction = { parts: [{ text: system }] };
+    try {
+      r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
+      requestLevel.set(modelPath, level);
+      break;
+    } catch (e) {
+      if (e instanceof GeminiError && e.kind === 'invalid') continue;
+      throw e;
+    }
+  }
+  const text: string = (r?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
+  try {
+    const cleaned = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    const a = cleaned.indexOf('{');
+    const b = cleaned.lastIndexOf('}');
+    return JSON.parse(a >= 0 && b > a ? cleaned.slice(a, b + 1) : cleaned);
+  } catch {
+    throw new GeminiError('Gemini anlaşılır bir yanıt döndürmedi.', 'other');
+  }
+}
+
 const ANALYZE_SYSTEM = `Bir romanın bölümlerini okuyup okuyucu için "hikâye defteri" tutuyorsun. Her bölüm için:
 - "summary": 2-4 cümlelik Türkçe özet (ne oldu, kim ne yaptı); "summary_en": aynı özetin İngilizcesi. Sonraki bölümlerden bilgi ekleme.
 - "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin adı (bilinen karakterlerde listedeki adı aynen kullan). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
@@ -378,39 +414,7 @@ ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.
     required: ['chapters'],
   };
   const hint = '\n\nYanıt biçimi: {"chapters": [{"index": number, "summary": string, "summary_en": string, "characters": [{"name": string, "description": string, "description_en": string}]}]}';
-  const modelPath = model.startsWith('models/') ? model : `models/${model}`;
-  let r: any;
-  for (let level = requestLevel.get(modelPath) ?? 0; ; level++) {
-    if (level >= REQUEST_LEVELS.length) throw new GeminiError(`${modelPath.replace(/^models\//, '')} bu isteği desteklemiyor.`, 'unsupported');
-    const o = REQUEST_LEVELS[level];
-    const generationConfig: Record<string, unknown> = { temperature: 0.3 };
-    if (o.json) generationConfig.responseMimeType = 'application/json';
-    if (o.schema) generationConfig.responseSchema = schema;
-    if (o.noThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-    const body: Record<string, unknown> = {
-      contents: [{ role: 'user', parts: [{ text: (o.system ? prompt : `${ANALYZE_SYSTEM}\n\n---\n\n${prompt}`) + (o.schema ? '' : hint) }] }],
-      generationConfig,
-    };
-    if (o.system) body.systemInstruction = { parts: [{ text: ANALYZE_SYSTEM }] };
-    try {
-      r = await call<any>(key, `${modelPath}:generateContent`, { method: 'POST', body: JSON.stringify(body) });
-      requestLevel.set(modelPath, level);
-      break;
-    } catch (e) {
-      if (e instanceof GeminiError && e.kind === 'invalid') continue;
-      throw e;
-    }
-  }
-  const text: string = (r?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
-  let data: any;
-  try {
-    const cleaned = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-    const a = cleaned.indexOf('{');
-    const b = cleaned.lastIndexOf('}');
-    data = JSON.parse(a >= 0 && b > a ? cleaned.slice(a, b + 1) : cleaned);
-  } catch {
-    throw new GeminiError('Gemini anlaşılır bir yanıt döndürmedi.', 'other');
-  }
+  const data = await generateJson(key, model, ANALYZE_SYSTEM, prompt, schema, hint);
   const wanted = new Set(chapters.map((c) => c.index));
   return (Array.isArray(data?.chapters) ? data.chapters : [])
     .filter((c: any) => Number.isInteger(c?.index) && wanted.has(c.index))

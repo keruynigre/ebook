@@ -30,6 +30,9 @@ export interface ReaderSettings {
   ttsVoiceEn: string;
   /** Read-aloud speed, 1 = normal. */
   ttsRate: number;
+  /** Cloudflare account for drawing comic panels (Workers AI); the token lives in secure storage. */
+  cfAccountId: string;
+  hasCfToken: boolean;
 }
 
 export const READER_THEMES: Record<ReaderTheme, { bg: string; text: string; muted: string; label: string }> = {
@@ -53,9 +56,12 @@ const DEFAULTS: ReaderSettings = {
   ttsVoiceTr: 'tr-TR-AhmetNeural',
   ttsVoiceEn: 'en-US-ChristopherNeural',
   ttsRate: 1,
+  cfAccountId: '',
+  hasCfToken: false,
 };
 
 const KEY_NAME = 'gemini-api-key';
+const CF_KEY_NAME = 'cloudflare-api-token';
 
 let settings: ReaderSettings = DEFAULTS;
 const listeners = new Set<() => void>();
@@ -72,6 +78,11 @@ export async function loadSettings(): Promise<void> {
     settings = { ...settings, hasGeminiKey: !!(await SecureStore.getItemAsync(KEY_NAME)) };
   } catch {
     settings = { ...settings, hasGeminiKey: false };
+  }
+  try {
+    settings = { ...settings, hasCfToken: !!(await SecureStore.getItemAsync(CF_KEY_NAME)) };
+  } catch {
+    settings = { ...settings, hasCfToken: false };
   }
   for (const l of listeners) l();
 }
@@ -106,4 +117,14 @@ export async function setGeminiKey(key: string | null): Promise<void> {
   if (key) await SecureStore.setItemAsync(KEY_NAME, key);
   else await SecureStore.deleteItemAsync(KEY_NAME);
   setSettings({ hasGeminiKey: !!key });
+}
+
+export async function getCfToken(): Promise<string | null> {
+  return SecureStore.getItemAsync(CF_KEY_NAME);
+}
+
+export async function setCfToken(token: string | null): Promise<void> {
+  if (token) await SecureStore.setItemAsync(CF_KEY_NAME, token);
+  else await SecureStore.deleteItemAsync(CF_KEY_NAME);
+  setSettings({ hasCfToken: !!token });
 }

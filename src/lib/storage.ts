@@ -150,3 +150,16 @@ export async function saveNotebookFile(id: string, data: unknown): Promise<void>
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
   await new File(dir, 'notebook.json').write(JSON.stringify(data));
 }
+
+/** <book>/comic/<index>/ holds script.json and the panel pictures (p0.jpg, p1.jpg …). */
+export function comicDir(id: string, index: number): Directory {
+  const dir = new Directory(bookDir(id), 'comic', String(index));
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  return dir;
+}
+
+export function comicCastFile(id: string): File {
+  const dir = new Directory(bookDir(id), 'comic');
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  return new File(dir, 'cast.json');
+}

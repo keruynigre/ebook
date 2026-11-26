@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
+import { mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
 import { chapterNeedsWork, clearChapterNotes, emptyNotebook, findCharacter, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
@@ -346,6 +347,30 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(chapterNeedsWork(withNote, 1, 'en'), true);
     assert.equal(clearChapterNotes(withNote, 1).characters[0].notes.length, 0);
     assert.equal(noteText({ chapter: 0, text: 'Known as the Poisonous Sword Revered Martial Artist', en: 'x' }, 'tr'), 'x');
+  });
+
+  await test('comic script parsing and panel prompts', () => {
+    const { script, cast } = parseComicScript(4, {
+      panels: [
+        { scene: 'Wide shot of a misty mountain sect.', characters: ['Chu Yang'], bubbles: [{ kind: 'speech', speaker: 'Chu Yang', tr: 'Geri döndüm.', en: '' }] },
+        { scene: '', characters: [], bubbles: [] },
+        { scene: 'Close-up.', characters: ['Mo Qing Wu'], bubbles: [{ kind: 'narration', speaker: 'x', tr: '', en: 'Years earlier.' }] },
+      ],
+      cast: [{ name: 'Chu Yang', look: 'young man, long black hair tied up, sharp eyes, plain disciple robe' }],
+    });
+    assert.equal(script.chapter, 4);
+    assert.equal(script.panels.length, 2);
+    assert.equal(script.panels[0].bubbles[0].en, 'Geri döndüm.');
+    assert.equal(script.panels[1].bubbles[0].speaker, '');
+    assert.equal(script.panels[1].bubbles[0].tr, 'Years earlier.');
+    const merged = mergeCast({ 'chu yang': 'old look' }, cast);
+    assert.equal(Object.keys(merged).length, 1);
+    const prompt = panelPrompt(script.panels[0], cast);
+    assert.ok(prompt.includes('long black hair'));
+    assert.ok(prompt.includes('black and white'));
+    assert.ok(prompt.length <= 1900);
+    const long = panelPrompt({ scene: 'x'.repeat(3000), characters: ['Chu Yang'], bubbles: [] }, cast);
+    assert.ok(long.length <= 1900 && long.endsWith('no watermark'));
   });
 
   await test('translation carries notebook info', () => {

@@ -294,6 +294,17 @@ export default function Reader() {
           contentStyle: { backgroundColor: theme.bg },
           headerRight: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Pressable
+                onPress={() => {
+                  save();
+                  router.push(`/comic/${id}/${i}`);
+                }}
+                hitSlop={10}
+                style={{ paddingHorizontal: 6 }}
+                accessibilityLabel="Resimli oku"
+              >
+                <Text style={{ color: theme.text, fontSize: 19 }}>🖼</Text>
+              </Pressable>
               <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
                 <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>
               </Pressable>

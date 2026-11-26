@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
+import { CloudflareCard } from '../components/CloudflareCard';
 import { Button, Card, ProgressBar, ui } from '../components/ui';
 import { createBackup, restoreBackup, type BackupProgress } from '../lib/backup';
 import { DEFAULT_TRANSLATION_PROMPT, listModels, type GeminiModel } from '../lib/gemini';
@@ -255,6 +256,8 @@ export default function SettingsScreen() {
           />
         </View>
       </Card>
+
+      <CloudflareCard />
 
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>Yedekleme</Text>

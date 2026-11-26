@@ -1,0 +1,66 @@
+/** Cloudflare Workers AI: draws comic panels with FLUX. */
+
+const API = 'https://api.cloudflare.com/client/v4';
+export const FLUX_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+
+export class CloudflareError extends Error {
+  constructor(
+    message: string,
+    /** auth: bad token or account; daily: free allowance used up; rate: too fast; blocked: prompt refused. */
+    readonly kind: 'auth' | 'daily' | 'rate' | 'busy' | 'blocked' | 'other',
+  ) {
+    super(message);
+  }
+}
+
+async function cf(token: string, path: string, init?: RequestInit): Promise<any> {
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    });
+  } catch (e) {
+    throw new CloudflareError(`Cloudflare'a bağlanılamadı: ${(e as Error).message}`, 'busy');
+  }
+  const text = await res.text();
+  let body: any = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (res.ok && body?.success !== false) return body;
+  const errors: any[] = body?.errors ?? [];
+  const message = errors.map((e) => e?.message).filter(Boolean).join('; ') || text.slice(0, 200) || `HTTP ${res.status}`;
+  const codes = errors.map((e) => Number(e?.code));
+  if (codes.includes(4006) || /daily free allocation|neurons/i.test(message)) {
+    throw new CloudflareError('Cloudflare’ın bugünkü ücretsiz çizim hakkı doldu. Yarın kaldığı yerden devam eder.', 'daily');
+  }
+  if (res.status === 401 || res.status === 403 || codes.includes(10000) || /authentication|unauthori[sz]ed/i.test(message)) {
+    throw new CloudflareError(`Cloudflare anahtarı ya da hesap kimliği kabul edilmedi: ${message}`, 'auth');
+  }
+  if (res.status === 429) throw new CloudflareError('Cloudflare çok hızlı istek dedi, biraz bekleniyor…', 'rate');
+  if (res.status >= 500) throw new CloudflareError(`Cloudflare geçici bir hata verdi: ${message}`, 'busy');
+  if (/nsfw|safety|flagged|inappropriate/i.test(message)) throw new CloudflareError('Bu kare güvenlik filtresine takıldı.', 'blocked');
+  throw new CloudflareError(`Cloudflare hatası: ${message}`, 'other');
+}
+
+/** Accounts the token can use (to fill in the account ID automatically). */
+export async function listAccounts(token: string): Promise<{ id: string; name: string }[]> {
+  const r = await cf(token, '/accounts?per_page=50');
+  return (Array.isArray(r?.result) ? r.result : []).map((a: any) => ({ id: String(a.id), name: String(a.name ?? a.id) }));
+}
+
+/** Draw one picture; returns a base64 JPEG. */
+export async function drawImage(token: string, accountId: string, prompt: string, seed?: number): Promise<string> {
+  const body: Record<string, unknown> = { prompt, steps: 4 };
+  if (seed !== undefined) body.seed = seed;
+  const r = await cf(token, `/accounts/${encodeURIComponent(accountId)}/ai/run/${FLUX_MODEL}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const image = r?.result?.image ?? r?.image;
+  if (typeof image !== 'string' || image.length < 100) throw new CloudflareError('Cloudflare resim döndürmedi.', 'other');
+  return image;
+}
