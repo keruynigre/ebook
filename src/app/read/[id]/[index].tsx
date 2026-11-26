@@ -1,3 +1,4 @@
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -56,6 +57,9 @@ const PREV_ICON = require('../../../../assets/icons/prev.png');
 const NEXT_ICON = require('../../../../assets/icons/next.png');
 /** Height of the top bar (chapter number, listen, Aa). */
 const BAR_H = 52;
+/** Auto-scroll: pixels per second for each speed level. */
+const AUTO_PX = 4;
+const AUTO_MAX = 20;
 const RATES = [0.75, 1, 1.15, 1.3, 1.5, 1.75, 2];
 const BUBBLE: Record<ReaderTheme, { card: string; text: string; muted: string; border: string }> = {
   dark: { card: '#262a33', text: '#eef0f4', muted: '#9aa0ad', border: '#3a3f4b' },
@@ -91,6 +95,9 @@ export default function Reader() {
   const scroll = useRef<ScrollViewInstance>(null);
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
+  // Auto-scroll: shown (control visible) and running.
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoRun, setAutoRun] = useState(false);
   const [showFonts, setShowFonts] = useState(false);
   const [showVoices, setShowVoices] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
@@ -307,6 +314,7 @@ export default function Reader() {
   };
   const listen = () => {
     if (!shown) return;
+    setAutoRun(false);
     if (narrHere && narr.lang === shownLang) {
       if (narr.status === 'playing' || narr.status === 'loading') pauseNarration();
       else resumeNarration();
@@ -332,6 +340,7 @@ export default function Reader() {
   const readFrom = (para: number) => {
     setBubble(null);
     if (!shown) return;
+    setAutoRun(false);
     if (highlightOn) narrateFrom(para);
     else startNarration(id, i, shown, shownLang, para);
   };
@@ -400,6 +409,67 @@ export default function Reader() {
     restoreTo.current = 0;
     router.setParams({ index: String(k) });
   };
+  // ---- auto-scroll: the text moves on by itself at the chosen speed ----
+  const autoSpeed = Math.min(AUTO_MAX, Math.max(1, settings.autoScrollSpeed ?? 4));
+  const setAutoSpeed = (v: number) => setSettings({ autoScrollSpeed: Math.min(AUTO_MAX, Math.max(1, v)) });
+  const narrPlaying = narr.bookId === id && (narr.status === 'playing' || narr.status === 'loading');
+  const startAuto = () => {
+    if (narrPlaying) pauseNarration();
+    setShowSettings(false);
+    setAutoOn(true);
+    setAutoRun(true);
+  };
+  const stopAuto = () => {
+    setAutoOn(false);
+    setAutoRun(false);
+  };
+  useEffect(() => {
+    if (!autoOn) return;
+    activateKeepAwakeAsync('autoscroll').catch(() => undefined);
+    return () => {
+      deactivateKeepAwake('autoscroll').catch(() => undefined);
+    };
+  }, [autoOn]);
+  // Listening moves the text itself, so auto-scroll waits while it plays.
+  const autoMoving = autoRun && !narrPlaying;
+  useEffect(() => {
+    if (!autoMoving) return;
+    snapBar(BAR_H);
+    let alive = true;
+    let frame = 0;
+    let last = 0;
+    let y = scrollY.current;
+    let nextTimer: ReturnType<typeof setTimeout> | null = null;
+    const pxPerSec = autoSpeed * AUTO_PX;
+    const step = (t: number) => {
+      if (!alive) return;
+      if (dragging.current || restoreTo.current !== null || !settledRef.current) {
+        // The finger (or a chapter change) moved the text: carry on from where it is now.
+        y = scrollY.current;
+      } else if (last) {
+        const max = sizes.current.content - sizes.current.view;
+        y += pxPerSec * Math.min(0.1, (t - last) / 1000);
+        if (max > 0 && y >= max) {
+          scroll.current?.scrollTo({ y: max, animated: false });
+          // End of the chapter: on to the next one if it is here, otherwise stop.
+          if (book?.downloaded.includes(i + 1)) nextTimer = setTimeout(() => alive && go(i + 1), 1500);
+          else setAutoRun(false);
+          return;
+        }
+        scroll.current?.scrollTo({ y, animated: false });
+      }
+      last = t;
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(frame);
+      if (nextTimer) clearTimeout(nextTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoMoving, autoSpeed, i]);
+
   const title = (shown === translation && translation?.title) || book?.chapters[i]?.title || chapter?.title || '';
   const nextExists = i + 1 < total;
   const nextMissing = nextExists && !has(i + 1);
@@ -625,6 +695,28 @@ export default function Reader() {
             </View>
           )}
         </ScrollView>
+        {autoOn && (
+          <View style={[styles.autoPill, { backgroundColor: theme.bg, borderColor: theme.muted + '88' }]}>
+            <Pressable
+              onPress={() => (autoRun ? setAutoRun(false) : startAuto())}
+              hitSlop={8}
+              style={styles.autoBtn}
+              accessibilityLabel={autoRun ? 'Kaydırmayı duraklat' : 'Kaydırmayı sürdür'}
+            >
+              <Image source={autoRun ? PAUSE_ICON : PLAY_ICON} style={{ width: 18, height: 18, tintColor: theme.text }} />
+            </Pressable>
+            <Pressable onPress={() => setAutoSpeed(autoSpeed - 1)} hitSlop={8} style={styles.autoBtn} accessibilityLabel="Yavaşlat">
+              <Text style={[styles.autoText, { color: theme.text }]}>−</Text>
+            </Pressable>
+            <Text style={{ color: theme.muted, fontSize: 13, minWidth: 22, textAlign: 'center' }}>{autoSpeed}</Text>
+            <Pressable onPress={() => setAutoSpeed(autoSpeed + 1)} hitSlop={8} style={styles.autoBtn} accessibilityLabel="Hızlandır">
+              <Text style={[styles.autoText, { color: theme.text }]}>+</Text>
+            </Pressable>
+            <Pressable onPress={stopAuto} hitSlop={8} style={styles.autoBtn} accessibilityLabel="Otomatik kaydırmayı kapat">
+              <Text style={[styles.autoText, { color: theme.text, fontSize: 16 }]}>✕</Text>
+            </Pressable>
+          </View>
+        )}
         <Animated.View
           style={{
             position: 'absolute',
@@ -703,6 +795,13 @@ export default function Reader() {
                   </Text>
                   <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
                 </Pressable>
+              </View>
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Otomatik kaydır</Text>
+                <Button small variant="secondary" title="−" onPress={() => setAutoSpeed(autoSpeed - 1)} />
+                <Text style={{ color: theme.text, width: 32, textAlign: 'center' }}>{autoSpeed}</Text>
+                <Button small variant="secondary" title="+" onPress={() => setAutoSpeed(autoSpeed + 1)} />
+                <Button small title={autoOn ? 'Durdur' : 'Başlat'} onPress={autoOn ? stopAuto : startAuto} />
               </View>
               <View style={styles.panelRow}>
                 <Text style={[styles.panelLabel, { color: theme.text }]}>Satır aralığı</Text>
@@ -869,6 +968,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  autoPill: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    opacity: 0.92,
+  },
+  autoBtn: { paddingHorizontal: 10, paddingVertical: 6 },
+  autoText: { fontSize: 20, fontWeight: '700' },
   panel: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexGrow: 0, flexShrink: 0 },
   panelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelLabel: { width: 100, fontSize: 14 },

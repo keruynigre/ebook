@@ -33,6 +33,8 @@ export interface ReaderSettings {
   ttsVoiceEn: string;
   /** Read-aloud speed, 1 = normal. */
   ttsRate: number;
+  /** Auto-scroll speed level (1–20); pixels per second = level × AUTO_PX. */
+  autoScrollSpeed: number;
   /** Cloudflare account for drawing comic panels (Workers AI); the token lives in secure storage. */
   cfAccountId: string;
   hasCfToken: boolean;
@@ -72,6 +74,7 @@ const DEFAULTS: ReaderSettings = {
   ttsVoiceTr: 'tr-TR-AhmetNeural',
   ttsVoiceEn: 'en-US-ChristopherNeural',
   ttsRate: 1,
+  autoScrollSpeed: 4,
   cfAccountId: '',
   hasCfToken: false,
   comicColor: false,
