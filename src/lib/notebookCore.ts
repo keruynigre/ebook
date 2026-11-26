@@ -39,7 +39,7 @@ export interface Notebook {
 export interface ChapterInfo {
   summary?: string;
   summaryEn?: string;
-  characters: { name: string; nameTr?: string; description: string; descriptionEn?: string }[];
+  characters: { name: string; nameTr?: string; aliases?: string[]; description: string; descriptionEn?: string }[];
 }
 
 export const emptyNotebook = (): Notebook => ({ characters: [], summaries: {}, summariesEn: {} });
@@ -118,6 +118,14 @@ export const normName = (s: string) =>
 
 const normText = (s: string) => normName(s);
 
+/** Known characters for a prompt: "Wang Lin (Tie Zhu, Wang Lin's Father's son)". */
+export function knownCharacterList(nb: Notebook, max = 150): string[] {
+  return [...nb.characters]
+    .sort((a, b) => b.lastChapter - a.lastChapter)
+    .slice(0, max)
+    .map((c) => (c.aliases.length ? `${c.name} (${c.aliases.slice(0, 4).join(', ')})` : c.name));
+}
+
 /** Index of the character this name refers to: exact name/alias, else a unique partial-name match. */
 export function findCharacter(list: NotebookCharacter[], name: string): number {
   const n = normName(name);
@@ -138,6 +146,70 @@ export function findCharacter(list: NotebookCharacter[], name: string): number {
   return partial.length === 1 ? partial[0] : -1;
 }
 
+/** Exact name, Turkish name or alias match. */
+function findExact(list: NotebookCharacter[], name: string): number {
+  const n = normName(name);
+  if (!n) return -1;
+  return list.findIndex(
+    (c) => normName(c.name) === n || (!!c.nameTr && normName(c.nameTr) === n) || c.aliases.some((a) => normName(a) === n),
+  );
+}
+
+function addAlias(c: NotebookCharacter, a: string) {
+  const n = normName(a);
+  if (!n || n === normName(c.name) || (c.nameTr && n === normName(c.nameTr))) return;
+  if (!c.aliases.some((x) => normName(x) === n)) c.aliases.push(a);
+  if (c.aliases.length > 12) c.aliases = c.aliases.slice(-12);
+}
+
+/** English labels for unnamed people ("Tie Zhu's Father", "Fourth Uncle") rather than names. */
+export const isLabel = (s: string) =>
+  /['’]s\b|\b(the|of|father|mother|uncle|aunt|brother|sister|son|daughter|elder|senior|junior|old|young|master|man|woman|boy|girl|wife|husband|grandfather|grandmother|cousin|disciple|leader|patriarch|first|second|third|fourth|fifth|sixth|seventh)\b/i.test(s);
+
+/** Whether `next` should replace `current` as the main name: a real name beats a label, a fuller name a shorter one. */
+export function betterName(next: string, current: string): boolean {
+  const nl = isLabel(next);
+  const cl = isLabel(current);
+  if (nl !== cl) return !nl;
+  if (nl) return false;
+  return next.split(/\s+/).length > current.split(/\s+/).length;
+}
+
+/** One record for two that turned out to be the same person. The better name stays the main one. */
+export function joinCharacters(a: NotebookCharacter, b: NotebookCharacter): NotebookCharacter {
+  const [main, other] = betterName(b.name, a.name) ? [b, a] : [a, b];
+  const c: NotebookCharacter = {
+    ...main,
+    aliases: [...main.aliases],
+    notes: [...main.notes],
+    seenIn: [...new Set([...main.seenIn, ...other.seenIn])].sort((x, y) => x - y),
+    firstChapter: Math.min(main.firstChapter, other.firstChapter),
+    lastChapter: Math.max(main.lastChapter, other.lastChapter),
+  };
+  for (const x of [other.name, other.nameTr ?? '', ...other.aliases]) addAlias(c, x);
+  for (const n of other.notes) {
+    const key = normName(n.text || n.en || '');
+    if (!c.notes.some((x) => x.chapter === n.chapter && normName(x.text || x.en || '') === key)) c.notes.push(n);
+  }
+  c.notes.sort((x, y) => x.chapter - y.chapter);
+  if (c.notes.length > MAX_NOTES) c.notes = [c.notes[0], ...c.notes.slice(-(MAX_NOTES - 1))];
+  return c;
+}
+
+/** Joins the characters named in each group (main name first) into one; unknown names are ignored. */
+export function mergeCharacterGroups(nb: Notebook, groups: string[][]): Notebook {
+  let characters = [...nb.characters];
+  for (const g of groups) {
+    const idx = [...new Set(g.map((n) => findExact(characters, n)).filter((k) => k >= 0))];
+    if (idx.length < 2) continue;
+    let joined = characters[idx[0]];
+    for (const k of idx.slice(1)) joined = joinCharacters(joined, characters[k]);
+    const drop = new Set(idx.slice(1));
+    characters = characters.map((c, k) => (k === idx[0] ? joined : c)).filter((_, k) => !drop.has(k));
+  }
+  return { ...nb, characters };
+}
+
 /** Add what one chapter revealed. Re-processing a chapter replaces its earlier notes and summary. */
 export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInfo): Notebook {
   const characters = nb.characters.map((c) => ({ ...c, notes: [...c.notes], aliases: [...c.aliases], seenIn: [...c.seenIn] }));
@@ -146,21 +218,41 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
     if (!name || name.length > 60) continue;
     const description = (raw.description ?? '').trim();
     const descriptionEn = (raw.descriptionEn ?? '').trim();
+    const aliases = (raw.aliases ?? []).map((a) => a.trim()).filter((a) => a && a.length <= 60 && normName(a) !== normName(name));
     let k = findCharacter(characters, name);
+    const byName = k >= 0;
+    // Other names given for the same person ("Tie Zhu" for Wang Lin) join records kept apart so far.
+    for (const a of aliases) {
+      const j = findExact(characters, a);
+      if (j < 0 || j === k) continue;
+      if (k < 0) k = j;
+      else {
+        const [keep, drop] = [Math.min(k, j), Math.max(k, j)];
+        characters[keep] = joinCharacters(characters[keep], characters[drop]);
+        characters.splice(drop, 1);
+        k = keep;
+      }
+    }
     if (k < 0) {
       characters.push({ name, aliases: [], notes: [], firstChapter: chapter, lastChapter: chapter, seenIn: [] });
       k = characters.length - 1;
     }
     const c = characters[k];
     const nameTr = raw.nameTr?.trim();
-    if (nameTr && normName(nameTr) !== normName(name) && nameTr.length <= 60) c.nameTr = nameTr;
-    // Prefer the fuller name as the display name and remember the other as an alias.
     if (normName(name) !== normName(c.name)) {
-      if (name.split(/\s+/).length > c.name.split(/\s+/).length) {
-        if (!c.aliases.some((a) => normName(a) === normName(c.name))) c.aliases.push(c.name);
+      // Found only through an alias: the answer names the main name ("Wang Lin" for "Tie Zhu").
+      if (betterName(name, c.name) || (!byName && !isLabel(name))) {
+        addAlias(c, c.name);
+        if (c.nameTr) addAlias(c, c.nameTr);
         c.name = name;
-      } else if (!c.aliases.some((a) => normName(a) === normName(name))) c.aliases.push(name);
+        c.nameTr = undefined;
+      } else addAlias(c, name);
     }
+    if (nameTr && normName(nameTr) !== normName(c.name) && nameTr.length <= 60) {
+      if (normName(name) === normName(c.name)) c.nameTr = nameTr;
+      else addAlias(c, nameTr);
+    }
+    for (const a of aliases) addAlias(c, a);
     c.firstChapter = Math.min(c.firstChapter, chapter);
     c.lastChapter = Math.max(c.lastChapter, chapter);
     if (!c.seenIn.includes(chapter)) c.seenIn = [...c.seenIn, chapter].sort((a, b) => a - b);
@@ -194,6 +286,9 @@ export function parseChapterInfo(data: any): ChapterInfo {
           const out: ChapterInfo['characters'][number] = {
             name: c.name.trim(),
             ...(typeof c.name_tr === 'string' && c.name_tr.trim() ? { nameTr: c.name_tr.trim() } : null),
+            ...(Array.isArray(c.aliases)
+              ? { aliases: c.aliases.filter((a: unknown) => typeof a === 'string' && a.trim()).map((a: string) => a.trim()).slice(0, 6) }
+              : null),
             description: typeof c.description === 'string' ? c.description.trim() : '',
           };
           if (typeof c.description_en === 'string' && c.description_en.trim()) out.descriptionEn = c.description_en.trim();

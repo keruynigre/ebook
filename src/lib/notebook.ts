@@ -5,11 +5,11 @@
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { GeminiError, analyzeChapters } from './gemini';
+import { GeminiError, analyzeChapters, findSameCharacters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { autoChapters, chapterNeedsWork, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { autoChapters, chapterNeedsWork, knownCharacterList, mergeCharacterGroups, noteText, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -223,7 +223,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
                 key,
                 choice.model,
                 usable,
-                nb.characters.map((c) => c.name),
+                knownCharacterList(nb),
                 book.title,
               )
             : [];
@@ -285,5 +285,50 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
       message: '',
       error: (e as Error).message,
     });
+  }
+}
+
+/**
+ * Asks Gemini which characters are the same person under different names and joins them.
+ * Returns how many records were joined away.
+ */
+export async function joinSameCharacters(bookId: string): Promise<number> {
+  if (jobs.get(bookId)?.running) return 0;
+  const book = getBook(bookId);
+  const key = await getGeminiKey();
+  const settings = getSettings();
+  if (!book || !key || !settings.geminiModel) throw new Error('Önce Ayarlar’dan Gemini anahtarı girin.');
+  const nb = await loadNotebook(bookId);
+  if (nb.characters.length < 2) return 0;
+  setJob(bookId, { running: true, done: 0, total: 1, message: 'Aynı kişiler aranıyor' });
+  try {
+    const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
+    const list = nb.characters.slice(0, 400).map((c) => ({ name: c.name, aliases: c.aliases, note: c.notes[0] ? noteText(c.notes[0], 'en') : '' }));
+    let groups: string[][] | null = null;
+    for (let tries = 0; !groups && tries < 8; tries++) {
+      const choice = pool.pick();
+      if (!choice) throw new Error('Gemini’nin bugünkü kullanım hakkı doldu.');
+      if ('waitMs' in choice) {
+        await sleep(Math.min(choice.waitMs, 15_000));
+        continue;
+      }
+      try {
+        groups = await findSameCharacters(key, choice.model, list, book.title);
+      } catch (e) {
+        if (!(e instanceof GeminiError)) throw e;
+        if (e.kind === 'busy' || e.kind === 'rate' || e.kind === 'daily') pool.report(choice.model, e.kind, e.retryAfterMs);
+        else if (e.kind === 'unsupported') pool.report(choice.model, 'daily');
+        else if (e.kind !== 'other') throw e;
+      }
+    }
+    if (!groups) throw new Error('Gemini yanıt vermedi, biraz sonra tekrar deneyin.');
+    const before = (await loadNotebook(bookId)).characters.length;
+    await update(bookId, (n) => mergeCharacterGroups(n, groups!));
+    const joined = before - (await loadNotebook(bookId)).characters.length;
+    setJob(bookId, { running: false, done: 1, total: 1, message: joined ? `${joined} tekrar kayıt birleştirildi.` : 'Tekrar eden karakter bulunmadı.' });
+    return joined;
+  } catch (e) {
+    setJob(bookId, { running: false, done: 0, total: 1, message: '', error: (e as Error).message });
+    throw e;
   }
 }

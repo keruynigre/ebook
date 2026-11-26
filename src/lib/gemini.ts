@@ -182,7 +182,7 @@ const APP_RULES = `Uygulama kuralları (yanıtın okunabilmesi için zorunlu):
 - Çeviri sonuna eklenecek notları paragrafların içine değil "notes" listesine yaz (her not kısa bir cümle). Not yoksa boş liste ver.
 - Bu bölümde ilk kez geçen ve tutarlı çevrilmesi gereken özel terimleri (unvanlar, teknik adları, seviye adları, eşya adları) "newTerms" listesine ekle. Kişi adlarını ekleme.
 - "summary": bölümün 2-4 cümlelik Türkçe özeti (ne oldu, kim ne yaptı); "summary_en": aynı özetin İngilizcesi.
-- "characters": bu bölümde görünen ya da konuşan önemli karakterler. "name": karakterin özgün adı (pinyin, ör. "Chu Yang"); adı verilmeyen karakterler için kısa İngilizce tanım (ör. "Tie Zhu's Father"). "name_tr": aynı adın Türkçe metindeki hali (özel adlar aynı kalır; ör. "Tie Zhu'nun Babası"). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
+- "characters": bu bölümde görünen ya da konuşan önemli karakterler, her kişi için TEK kayıt. "name": karakterin özgün adı (pinyin, ör. "Chu Yang"; bilinen karakterlerdeki kişiyse listedeki ana adı aynen kullan); adı hiç bilinmeyenler için kısa İngilizce tanım (ör. "Tie Zhu's Father"). Kişinin adı biliniyorsa (bu bölümde ya da listede) tanım yerine adını yaz. "aliases": aynı kişinin bu bölümde geçen diğer adları, lakapları ve tanımları (ör. Wang Lin için "Tie Zhu"; Wang Tianshui için "Tie Zhu's Father", "Lao Er"); lakap ya da tanım ayrı bir karakter değildir. "name_tr": ana adın Türkçe metindeki hali (özel adlar aynı kalır; ör. "Tie Zhu'nun Babası"). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
 - Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
 /** Translates one chapter to Turkish. `glossary` keeps terms consistent across chapters. */
@@ -193,6 +193,7 @@ export async function translateChapter(
   glossary: GlossaryEntry[],
   bookTitle: string,
   instructions: string = DEFAULT_TRANSLATION_PROMPT,
+  knownCharacters: string[] = [],
 ): Promise<TranslationResult> {
   const glossaryText = glossary.length
     ? glossary
@@ -208,6 +209,8 @@ export async function translateChapter(
 
 Sözlük (kaynak => Türkçe):
 ${glossaryText}
+
+Bilinen karakterler (ana ad, parantez içinde diğer adları): ${knownCharacters.join('; ') || '(henüz yok)'}
 
 Aşağıdaki JSON'daki bölüm başlığını ve paragrafların tamamını Türkçeye çevir.
 
@@ -234,8 +237,8 @@ ${JSON.stringify(input)}`;
         type: 'ARRAY',
         items: {
           type: 'OBJECT',
-          properties: { name: { type: 'STRING' }, name_tr: { type: 'STRING' }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
-          required: ['name', 'name_tr', 'description', 'description_en'],
+          properties: { name: { type: 'STRING' }, name_tr: { type: 'STRING' }, aliases: { type: 'ARRAY', items: { type: 'STRING' } }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
+          required: ['name', 'name_tr', 'aliases', 'description', 'description_en'],
         },
       },
     },
@@ -243,7 +246,7 @@ ${JSON.stringify(input)}`;
     required: ['title', 'paragraphs', 'notes', 'newTerms', 'summary', 'summary_en', 'characters'],
   };
   const jsonHint =
-    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}], "summary": string, "summary_en": string, "characters": [{"name": string, "name_tr": string, "description": string, "description_en": string}]}';
+    '\n\nYanıt biçimi: {"title": string, "paragraphs": string[], "notes": string[], "newTerms": [{"source": string, "target": string}], "summary": string, "summary_en": string, "characters": [{"name": string, "name_tr": string, "aliases": string[], "description": string, "description_en": string}]}';
 
   const modelPath = model.startsWith('models/') ? model : `models/${model}`;
   // Models differ in which options they accept. Start with the full request and drop
@@ -375,7 +378,7 @@ export async function generateJson(key: string, model: string, system: string, p
 
 const ANALYZE_SYSTEM = `Bir romanın bölümlerini okuyup okuyucu için "hikâye defteri" tutuyorsun. Her bölüm için:
 - "summary": 2-4 cümlelik Türkçe özet (ne oldu, kim ne yaptı); "summary_en": aynı özetin İngilizcesi. Sonraki bölümlerden bilgi ekleme.
-- "characters": bölümde görünen ya da konuşan önemli karakterler. "name": karakterin özgün adı (pinyin, ör. "Chu Yang"; bilinen karakterlerde listedeki adı aynen kullan); adı verilmeyen karakterler için kısa İngilizce tanım (ör. "Tie Zhu's Father"), asla Türkçe değil. "name_tr": aynı adın Türkçesi (özel adlar aynı kalır; ör. "Tie Zhu'nun Babası"). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
+- "characters": bölümde görünen ya da konuşan önemli karakterler, her kişi için TEK kayıt. "name": karakterin özgün adı (pinyin, ör. "Chu Yang"; bilinen karakterlerdeki kişiyse listedeki ana adı aynen kullan); adı hiç bilinmeyenler için kısa İngilizce tanım (ör. "Tie Zhu's Father"), asla Türkçe değil. Kişinin adı biliniyorsa tanım yerine adını yaz. "aliases": aynı kişinin bölümde geçen diğer adları, lakapları ve tanımları (ör. Wang Lin için "Tie Zhu"; Wang Tianshui için "Tie Zhu's Father", "Lao Er"); lakap ya da tanım ayrı bir karakter değildir. "name_tr": ana adın Türkçesi (özel adlar aynı kalır; ör. "Tie Zhu'nun Babası"). "description": bu bölümde öğrenilen kalıcı bilgiler (görünüş, yaş, kimlik, unvan, yetenek, ilişkiler), kısa ve Türkçe; "description_en": aynı bilginin İngilizcesi. Yeni bilgi yoksa ikisini de boş bırak.
 "summary" ve "description" her zaman Türkçe, "summary_en" ve "description_en" her zaman İngilizce olsun; bölümün dili ne olursa olsun.
 Yanıtı yalnızca istenen JSON biçiminde ver.`;
 
@@ -388,7 +391,7 @@ export async function analyzeChapters(
   bookTitle: string,
 ): Promise<{ index: number; info: ChapterInfo }[]> {
   const prompt = `Roman: ${bookTitle}
-Bilinen karakterler: ${knownCharacters.slice(0, 150).join(', ') || '(henüz yok)'}
+Bilinen karakterler (ana ad, parantez içinde diğer adları): ${knownCharacters.slice(0, 150).join('; ') || '(henüz yok)'}
 
 Bölümler (JSON):
 ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.paragraphs.join('\n') })))}`;
@@ -407,8 +410,8 @@ ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.
               type: 'ARRAY',
               items: {
                 type: 'OBJECT',
-                properties: { name: { type: 'STRING' }, name_tr: { type: 'STRING' }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
-                required: ['name', 'name_tr', 'description', 'description_en'],
+                properties: { name: { type: 'STRING' }, name_tr: { type: 'STRING' }, aliases: { type: 'ARRAY', items: { type: 'STRING' } }, description: { type: 'STRING' }, description_en: { type: 'STRING' } },
+                required: ['name', 'name_tr', 'aliases', 'description', 'description_en'],
               },
             },
           },
@@ -418,10 +421,36 @@ ${JSON.stringify(chapters.map((c) => ({ index: c.index, title: c.title, text: c.
     },
     required: ['chapters'],
   };
-  const hint = '\n\nYanıt biçimi: {"chapters": [{"index": number, "summary": string, "summary_en": string, "characters": [{"name": string, "name_tr": string, "description": string, "description_en": string}]}]}';
+  const hint = '\n\nYanıt biçimi: {"chapters": [{"index": number, "summary": string, "summary_en": string, "characters": [{"name": string, "name_tr": string, "aliases": string[], "description": string, "description_en": string}]}]}';
   const data = await generateJson(key, model, ANALYZE_SYSTEM, prompt, schema, hint);
   const wanted = new Set(chapters.map((c) => c.index));
   return (Array.isArray(data?.chapters) ? data.chapters : [])
     .filter((c: any) => Number.isInteger(c?.index) && wanted.has(c.index))
     .map((c: any) => ({ index: c.index as number, info: parseChapterInfo(c) }));
+}
+
+/** Groups of notebook characters that are the same person; the first name of each group is the one to keep. */
+export async function findSameCharacters(
+  key: string,
+  model: string,
+  characters: { name: string; aliases: string[]; note: string }[],
+  bookTitle: string,
+): Promise<string[][]> {
+  const system = `Bir romanın karakter listesindeki tekrarları buluyorsun. Aynı kişinin farklı adlarla (gerçek adı, lakabı, "X's Father" gibi tanımı) ayrı kaydedildiği grupları ver.
+Her grubun ilk adı tutulacak ana ad olsun: kişinin gerçek adı (pinyin) varsa o, yoksa en açık tanım. Yalnızca notlardan ve adlardan emin olduğun eşleşmeleri ver; emin değilsen gruplama. Tekrar yoksa boş liste ver.
+Adları listede yazıldığı gibi aynen kullan. Yanıtı yalnızca istenen JSON biçiminde ver.`;
+  const prompt = `Roman: ${bookTitle}
+
+Karakterler (JSON):
+${JSON.stringify(characters.map((c) => ({ name: c.name, aliases: c.aliases, note: c.note.slice(0, 200) })))}`;
+  const schema = {
+    type: 'OBJECT',
+    properties: { groups: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'STRING' } } } },
+    required: ['groups'],
+  };
+  const data = await generateJson(key, model, system, prompt, schema, '\n\nYanıt biçimi: {"groups": [[string, string, ...]]}');
+  return (Array.isArray(data?.groups) ? data.groups : [])
+    .filter((g: unknown) => Array.isArray(g))
+    .map((g: unknown[]) => g.filter((n): n is string => typeof n === 'string' && !!n.trim()))
+    .filter((g: string[]) => g.length >= 2);
 }

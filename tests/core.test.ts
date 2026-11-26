@@ -32,7 +32,7 @@ import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
 import { cardPrompt, castNames, mergeCast, panelPrompt, parseComicScript } from '../src/lib/comicCore';
-import { autoChapters, chapterNeedsWork, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -327,6 +327,46 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(noteText(nb.characters[0].notes[0], 'en'), 'Tall.');
     assert.equal(noteText(nb.characters[0].notes[0], 'tr'), 'Uzun boylu.');
     assert.equal(noteText({ chapter: 0, text: 'Sadece Türkçe' }, 'en'), 'Sadece Türkçe');
+  });
+
+  await test('nicknames and labels join the same character', () => {
+    assert.equal(isLabel("Tie Zhu's Father"), true);
+    assert.equal(isLabel('Fourth Uncle'), true);
+    assert.equal(isLabel('Wang Tianshui'), false);
+    assert.equal(betterName('Wang Tianshui', "Tie Zhu's Father"), true);
+    assert.equal(betterName("Tie Zhu's Father's Fourth Younger Brother", 'Fourth Uncle'), false);
+    let nb = mergeChapterInfo(emptyNotebook(), 0, {
+      summary: 'Başlangıç.',
+      characters: [
+        { name: 'Tie Zhu', description: 'Zeki köy çocuğu.' },
+        { name: "Tie Zhu's Father", description: 'Marangoz.' },
+        { name: "Wang Lin's Father", description: 'Gururlu baba.' },
+      ],
+    });
+    assert.equal(nb.characters.length, 3);
+    // A later chapter gives real names and the other names as aliases: the records are joined.
+    nb = mergeChapterInfo(nb, 1, {
+      summary: 'Devam.',
+      characters: [
+        { name: 'Wang Lin', aliases: ['Tie Zhu'], description: 'Asıl adı Wang Lin.' },
+        { name: 'Wang Tianshui', aliases: ["Tie Zhu's Father", "Wang Lin's Father", 'Lao Er'], description: 'Wang Lin’in babası.' },
+      ],
+    });
+    assert.deepEqual(nb.characters.map((c) => c.name).sort(), ['Wang Lin', 'Wang Tianshui']);
+    const father = nb.characters.find((c) => c.name === 'Wang Tianshui')!;
+    assert.ok(father.aliases.includes("Tie Zhu's Father") && father.aliases.includes("Wang Lin's Father") && father.aliases.includes('Lao Er'));
+    assert.deepEqual(father.seenIn, [0, 1]);
+    assert.equal(father.notes.length, 3);
+    assert.equal(nb.characters.find((c) => c.name === 'Wang Lin')!.firstChapter, 0);
+    assert.ok(knownCharacterList(nb).some((x) => x.startsWith('Wang Lin (Tie Zhu')));
+    // Groups found later (or chosen by hand) are joined too; the real name stays the main one.
+    let nb2 = mergeChapterInfo(emptyNotebook(), 0, {
+      characters: [{ name: 'Fourth Uncle', description: 'Tavsiye hakkı var.' }, { name: "Tie Zhu's Father's Fourth Younger Brother", description: 'Ev sahibi.' }, { name: 'Zhang', description: '' }],
+    });
+    nb2 = mergeCharacterGroups(nb2, [['Fourth Uncle', "Tie Zhu's Father's Fourth Younger Brother"], ['Nobody', 'Zhang']]);
+    assert.deepEqual(nb2.characters.map((c) => c.name), ['Fourth Uncle', 'Zhang']);
+    assert.deepEqual(nb2.characters[0].aliases, ["Tie Zhu's Father's Fourth Younger Brother"]);
+    assert.equal(nb2.characters[0].notes.length, 2);
   });
 
   await test('notebook fills itself only when kept from the first chapter', () => {

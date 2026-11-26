@@ -6,8 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
-import { editNotebook, fillNotebook, missingChapters, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
-import { displayName, normName, noteText, type NotebookCharacter } from '../../lib/notebookCore';
+import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
+import { displayName, mergeCharacterGroups, normName, noteText, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
 import { colors } from '../../lib/theme';
@@ -28,6 +28,9 @@ export default function NotebookScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const [glossary, setGlossary] = useState<GlossaryEntry[] | null>(null);
   const [editing, setEditing] = useState<{ index: number; source: string; target: string } | null>(null);
+  // Character chosen to be joined with another one ("same person").
+  const [joining, setJoining] = useState<NotebookCharacter | null>(null);
+  const [joinQuery, setJoinQuery] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -109,6 +112,34 @@ export default function NotebookScreen() {
       },
     ]);
 
+  const characterMenu = (c: NotebookCharacter) =>
+    Alert.alert(displayName(c, lang), 'Bu kayıtla ne yapılsın?', [
+      { text: 'Vazgeç', style: 'cancel' },
+      { text: 'Sil', style: 'destructive', onPress: () => deleteCharacter(c) },
+      {
+        text: 'Aynı kişiyle birleştir',
+        onPress: () => {
+          setJoinQuery('');
+          setJoining(c);
+        },
+      },
+    ]);
+
+  const joinWith = (other: NotebookCharacter) => {
+    if (!joining) return;
+    const a = joining;
+    setJoining(null);
+    editNotebook(id, (n) => mergeCharacterGroups(n, [[other.name, a.name]])).catch(() => undefined);
+  };
+
+  const findSame = () => {
+    if (!settings.hasGeminiKey) {
+      Alert.alert('Gemini anahtarı gerekli', 'Bunun için Ayarlar’dan Gemini anahtarınızı girin.');
+      return;
+    }
+    joinSameCharacters(id).catch(() => undefined);
+  };
+
   const deleteCharacter = (c: NotebookCharacter) =>
     Alert.alert(`${displayName(c, lang)} defterden silinsin mi?`, 'Yanlış ya da gereksiz bir kayıtsa silebilirsiniz.', [
       { text: 'Vazgeç', style: 'cancel' },
@@ -175,6 +206,12 @@ export default function NotebookScreen() {
         placeholderTextColor={colors.muted}
         style={ui.input}
       />
+      {tab === 'characters' && (nb?.characters.length ?? 0) > 1 && !job?.running && (
+        <>
+          <Button small variant="secondary" title="Aynı kişileri bul ve birleştir" onPress={findSame} />
+          <Text style={ui.muted}>Bir karaktere basılı tutarak elle birleştirebilir ya da silebilirsin.</Text>
+        </>
+      )}
       {tab === 'glossary' && (
         <Button small variant="secondary" title="+ Terim ekle" onPress={() => setEditing({ index: -1, source: '', target: '' })} />
       )}
@@ -198,7 +235,7 @@ export default function NotebookScreen() {
             const expanded = open === c.name;
             const notes = c.notes.filter((n) => n.chapter <= upTo);
             return (
-              <Pressable onPress={() => setOpen(expanded ? null : c.name)} onLongPress={() => deleteCharacter(c)} style={styles.item}>
+              <Pressable onPress={() => setOpen(expanded ? null : c.name)} onLongPress={() => characterMenu(c)} style={styles.item}>
                 <View style={[ui.row, { justifyContent: 'space-between' }]}>
                   <Text style={styles.name}>{displayName(c, lang)}</Text>
                   <Text style={{ color: colors.muted }}>{expanded ? '▴' : '▾'}</Text>
@@ -312,6 +349,41 @@ export default function NotebookScreen() {
               <Button variant="secondary" title="Vazgeç" onPress={() => setEditing(null)} style={{ flex: 1 }} />
               <Button title="Kaydet" onPress={saveTerm} style={{ flex: 1 }} />
             </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+      <Modal visible={!!joining} transparent animationType="fade" onRequestClose={() => setJoining(null)}>
+        <Pressable style={styles.backdrop} onPress={() => setJoining(null)}>
+          <Pressable style={[styles.dialog, { maxHeight: '80%' }]}>
+            <Text style={styles.name}>{joining ? displayName(joining, lang) : ''} kiminle aynı kişi?</Text>
+            <TextInput
+              value={joinQuery}
+              onChangeText={setJoinQuery}
+              placeholder="Ara…"
+              placeholderTextColor={colors.muted}
+              style={ui.input}
+            />
+            <FlatList
+              data={(nb?.characters ?? []).filter(
+                (c) =>
+                  c.name !== joining?.name &&
+                  (!joinQuery.trim() ||
+                    [c.name, c.nameTr ?? '', ...c.aliases].some((x) => normName(x).includes(normName(joinQuery)))),
+              )}
+              keyExtractor={(c) => c.name}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item: c }) => (
+                <Pressable onPress={() => joinWith(c)} style={[styles.item, { marginBottom: 6 }]}>
+                  <Text style={styles.name}>{displayName(c, lang)}</Text>
+                  {!!c.aliases.length && (
+                    <Text style={ui.muted} numberOfLines={1}>
+                      {c.aliases.join(', ')}
+                    </Text>
+                  )}
+                </Pressable>
+              )}
+            />
+            <Button variant="secondary" title="Vazgeç" onPress={() => setJoining(null)} />
           </Pressable>
         </Pressable>
       </Modal>

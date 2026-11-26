@@ -9,7 +9,8 @@ import { getGeminiKey, getSettings, setSettings } from './settings';
 import { sourceById } from './sources';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { recordChapterInfo } from './notebook';
+import { loadNotebook, recordChapterInfo } from './notebook';
+import { knownCharacterList } from './notebookCore';
 import { loadChapter, loadGlossary, saveChapter, saveGlossary, saveTranslation } from './storage';
 import { sleep } from './text';
 import type { ChapterContent } from './types';
@@ -180,7 +181,8 @@ export async function startDownload(bookId: string, indexes: number[], options: 
       lastGemini = Date.now();
       try {
         show(`Çevriliyor (${ModelPool.label(model)})`);
-        const r = await translateChapter(key!, model, content, glossary, book.title, settings.translationPrompt);
+        const known = knownCharacterList(await loadNotebook(bookId).catch(() => ({ characters: [], summaries: {} })));
+        const r = await translateChapter(key!, model, content, glossary, book.title, settings.translationPrompt, known);
         await saveTranslation(bookId, index, r.chapter);
         recordChapterInfo(bookId, index, r.info).catch(() => undefined);
         if (r.newTerms.length) {
