@@ -127,22 +127,37 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
   const key = await getGeminiKey();
   const settings = getSettings();
   if (!book || !key || !settings.geminiModel) {
-    setJob(bookId, { running: false, done: 0, total: 0, message: '', error: 'Önce Ayarlar’dan Gemini anahtarı girin.' });
+    setJob(bookId, {
+      running: false,
+      done: 0,
+      total: 0,
+      message: '',
+      error: 'Önce Ayarlar’dan Gemini anahtarı girin.',
+    });
     return;
   }
   const todo = missingChapters(bookId, await loadNotebook(bookId), upTo, lang);
-  const job: NotebookJob = { running: true, done: 0, total: todo.length, message: 'Hazırlanıyor…' };
+  const job: NotebookJob = {
+    running: true,
+    done: 0,
+    total: todo.length,
+    message: 'Hazırlanıyor…',
+  };
   setJob(bookId, { ...job });
   const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
   let at = 0;
   let modelsRefreshed = false;
+  // Fewer chapters per request after an unreadable (often cut-off) answer.
+  let batchMax = BATCH_MAX;
+  let failures = 0;
+  let skipped = 0;
   try {
     while (at < todo.length) {
       if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
       // Next batch: a few chapters, Turkish text when there is one.
       const batch: { index: number; title: string; paragraphs: string[] }[] = [];
       let chars = 0;
-      while (at + batch.length < todo.length && batch.length < BATCH_MAX) {
+      while (at + batch.length < todo.length && batch.length < batchMax) {
         const i = todo[at + batch.length];
         const c = (book.translated?.includes(i) ? await loadTranslation(bookId, i) : null) ?? (await loadChapter(bookId, i));
         if (!c) {
@@ -156,46 +171,100 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
       }
       const usable = batch.filter((b) => b.paragraphs.length);
       let results: { index: number; info: ChapterInfo }[] = [];
+      let unreadable = false;
       for (;;) {
         if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
         let choice = pool.pick();
         if (!choice && !modelsRefreshed) {
           modelsRefreshed = true;
-          setJob(bookId, { ...job, message: 'Gemini model listesi yenileniyor' });
+          setJob(bookId, {
+            ...job,
+            message: 'Gemini model listesi yenileniyor',
+          });
           pool.addModels(await refreshModelList(key).catch(() => []));
           choice = pool.pick();
         }
         if (!choice) throw new Error('Gemini’nin bugünkü kullanım hakkı doldu. Yarın kaldığı yerden devam edebilirsiniz.');
         if ('waitMs' in choice) {
-          setJob(bookId, { ...job, message: `Gemini yoğun, ${Math.ceil(choice.waitMs / 1000)} sn bekleniyor` });
+          setJob(bookId, {
+            ...job,
+            message: `Gemini yoğun, ${Math.ceil(choice.waitMs / 1000)} sn bekleniyor`,
+          });
           await sleep(Math.min(choice.waitMs, 15_000));
           continue;
         }
         try {
-          setJob(bookId, { ...job, message: `${usable[0]?.index + 1}–${usable[usable.length - 1]?.index + 1}. bölümler okunuyor` });
+          setJob(bookId, {
+            ...job,
+            message: `${usable[0]?.index + 1}–${usable[usable.length - 1]?.index + 1}. bölümler okunuyor`,
+          });
           const nb = await loadNotebook(bookId);
           results = usable.length
-            ? await analyzeChapters(key, choice.model, usable, nb.characters.map((c) => c.name), book.title)
+            ? await analyzeChapters(
+                key,
+                choice.model,
+                usable,
+                nb.characters.map((c) => c.name),
+                book.title,
+              )
             : [];
           break;
         } catch (e) {
           if (!(e instanceof GeminiError)) throw e;
           if (e.kind === 'busy' || e.kind === 'rate' || e.kind === 'daily') pool.report(choice.model, e.kind, e.retryAfterMs);
           else if (e.kind === 'unsupported') pool.report(choice.model, 'daily');
-          else throw e;
+          else if (e.kind === 'other' || e.kind === 'blocked') {
+            unreadable = true;
+            break;
+          } else throw e;
         }
       }
+      if (unreadable) {
+        failures++;
+        if (batch.length > 1) {
+          // Try again with half as many chapters.
+          batchMax = Math.max(1, Math.floor(batch.length / 2));
+          continue;
+        }
+        if (failures < 3) continue;
+        // One chapter keeps failing: leave it for later and go on.
+        skipped++;
+        failures = 0;
+        at += batch.length;
+        job.done = at;
+        setJob(bookId, { ...job });
+        continue;
+      }
+      failures = 0;
       for (const r of results.sort((a, b) => a.index - b.index)) {
         // An empty summary still marks the chapter as done.
-        await update(bookId, (nb) => mergeChapterInfo(clearChapterNotes(nb, r.index), r.index, { ...r.info, summary: r.info.summary || '—' }));
+        await update(bookId, (nb) =>
+          mergeChapterInfo(clearChapterNotes(nb, r.index), r.index, {
+            ...r.info,
+            summary: r.info.summary || '—',
+          }),
+        );
       }
       at += batch.length;
       job.done = at;
       setJob(bookId, { ...job });
       await sleep(4_000); // stay under the free tier's per-minute limit
     }
-    setJob(bookId, { running: false, done: job.done, total: job.total, message: `${job.done} bölüm deftere işlendi.` });
+    setJob(bookId, {
+      running: false,
+      done: job.done,
+      total: job.total,
+      message: skipped
+        ? `${job.done - skipped} bölüm deftere işlendi, ${skipped} bölüm işlenemedi (sonra tekrar “Güncelle”).`
+        : `${job.done} bölüm deftere işlendi.`,
+    });
   } catch (e) {
-    setJob(bookId, { running: false, done: job.done, total: job.total, message: '', error: (e as Error).message });
+    setJob(bookId, {
+      running: false,
+      done: job.done,
+      total: job.total,
+      message: '',
+      error: (e as Error).message,
+    });
   }
 }
