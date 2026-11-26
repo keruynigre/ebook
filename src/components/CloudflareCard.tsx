@@ -62,7 +62,7 @@ export function CloudflareCard() {
     <Card style={{ gap: 10 }}>
       <Text style={ui.h2}>Resimli okuma (Cloudflare)</Text>
       <Text style={ui.muted}>
-        Okuyucudaki 🖼 düğmesi bölümü siyah-beyaz çizgi romana çevirir: Gemini sahneleri ve konuşmaları seçer,
+        Okuyucudaki resim düğmesi bölümü siyah-beyaz çizgi romana çevirir: Gemini sahneleri ve konuşmaları seçer,
         Cloudflare’ın FLUX modeli kareleri çizer. Ücretsiz hesapta günlük çizim hakkı sınırlıdır.
       </Text>
       <Text style={ui.text}>

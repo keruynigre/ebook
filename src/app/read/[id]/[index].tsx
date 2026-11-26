@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -43,6 +44,8 @@ import {
 import { VOICES, voiceName } from '../../../lib/tts/voices';
 
 const SAVE_EVERY_MS = 1500;
+const LISTEN_ICON = require('../../../../assets/icons/listen.png');
+const COMIC_ICON = require('../../../../assets/icons/comic.png');
 /** Height of the top bar (chapter number, listen, Aa). */
 const BAR_H = 52;
 const RATES = [0.75, 1, 1.15, 1.3, 1.5, 1.75, 2];
@@ -564,13 +567,17 @@ export default function Reader() {
                   style={{ paddingHorizontal: 6 }}
                   accessibilityLabel="Resimli oku"
                 >
-                  <Text style={{ color: theme.text, fontSize: 19 }}>🖼</Text>
+                  <Image source={COMIC_ICON} style={{ width: 24, height: 24, tintColor: theme.text }} />
                 </Pressable>
                 <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
                   <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>
                 </Pressable>
                 <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
-                  <Text style={{ color: theme.text, fontSize: 20 }}>{highlightOn && narr.status !== 'paused' ? '⏸' : '🎧'}</Text>
+                  {highlightOn && narr.status !== 'paused' ? (
+                    <Text style={{ color: theme.text, fontSize: 20 }}>⏸</Text>
+                  ) : (
+                    <Image source={LISTEN_ICON} style={{ width: 26, height: 26, tintColor: theme.text }} />
+                  )}
                 </Pressable>
                 <Pressable onPress={() => setShowSettings((v) => !v)} hitSlop={10} style={{ paddingHorizontal: 8 }}>
                   <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Aa</Text>
