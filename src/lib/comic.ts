@@ -13,6 +13,7 @@ import {
   COMIC_HINT,
   COMIC_SCHEMA,
   COMIC_QUALITY,
+  panelRange,
   comicSystem,
   cardPrompt,
   castNames,
@@ -258,8 +259,10 @@ async function writeScript(bookId: string, index: number, update: (j: Partial<Co
     }
     try {
       update({ message: 'Sahneler seçiliyor (Gemini)…' });
-      const data = await generateJson(key, choice.model, comicSystem(COMIC_QUALITY[settings.comicQuality ?? 'balanced'].panels), prompt, COMIC_SCHEMA, COMIC_HINT);
+      const range = panelRange(settings.comicQuality ?? 'balanced', settings.comicCount ?? 0);
+      const data = await generateJson(key, choice.model, comicSystem(range), prompt, COMIC_SCHEMA, COMIC_HINT);
       const { script, cast: found } = parseComicScript(index, data, chapter.paragraphs.length);
+      script.panels = script.panels.slice(0, range[1]);
       if (!script.panels.length) throw new GeminiError('Gemini sahne döndürmedi.', 'other');
       await comicCastFile(bookId).write(JSON.stringify(mergeCast(cast, found)));
       await scriptFile(bookId, index).write(JSON.stringify(script));

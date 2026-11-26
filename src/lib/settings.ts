@@ -42,6 +42,8 @@ export interface ReaderSettings {
   illustrate: boolean;
   /** Panel size and number of references: smaller costs fewer Cloudflare neurons. */
   comicQuality: ComicQuality;
+  /** Pictures per chapter; 0 = as the quality preset suggests. */
+  comicCount: number;
   /** Whether an art style picture was chosen for the comic (saved as comic-style.jpg). */
   comicStyleRef: boolean;
   /** Changes whenever a new style picture is chosen, so character cards are drawn again in the new style. */
@@ -75,6 +77,7 @@ const DEFAULTS: ReaderSettings = {
   comicColor: false,
   illustrate: false,
   comicQuality: 'balanced',
+  comicCount: 0,
   comicStyleRef: false,
   comicStyleVersion: 0,
 };

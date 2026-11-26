@@ -12,7 +12,7 @@ import { parseGenericChapter, parseGenericNovel } from '../src/lib/sources/gener
 import { sourceForUrl } from '../src/lib/sources';
 import { cleanParagraphs, htmlToParagraphs, slugify } from '../src/lib/text';
 import type { Http } from '../src/lib/types';
-import { chapterCost, comicSystem } from '../src/lib/comicCore';
+import { chapterCost, comicSystem, panelRange } from '../src/lib/comicCore';
 import { countWords, formatCount, pastReading, recordRead, summarize, wordsRead } from '../src/lib/readStats';
 import {
   edgeDate,
@@ -592,6 +592,9 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
 
   await test('comic quality presets', () => {
     assert.match(comicSystem([3, 4]), /"panels": 3 to 4 pictures/);
+    assert.match(comicSystem(panelRange('saver', 8)), /"panels": exactly 8 pictures/);
+    assert.deepEqual(panelRange('high'), [6, 8]);
+    assert.ok(chapterCost('saver', 10) > chapterCost('saver'));
     assert.ok(chapterCost('saver') < chapterCost('balanced') && chapterCost('balanced') < chapterCost('high'));
   });
 

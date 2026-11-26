@@ -176,16 +176,30 @@ export const COMIC_QUALITY: Record<ComicQuality, { width: number; height: number
   saver: { width: 640, height: 480, refs: 2, panels: [3, 4] },
 };
 
+/** Pictures per chapter the user can choose; 0 means "as the quality preset suggests". */
+export const COMIC_COUNTS = [0, 2, 3, 4, 5, 6, 8, 10, 12];
+
+/** (min, max) pictures per chapter: the chosen count, or the preset's range when `count` is 0. */
+export function panelRange(q: ComicQuality, count = 0): [number, number] {
+  if (count > 0) return [Math.round(count), Math.round(count)];
+  return COMIC_QUALITY[q].panels;
+}
+
 /** Rough neurons for one chapter (panels only; character cards come on top, once per character). */
-export function chapterCost(q: ComicQuality): number {
+export function chapterCost(q: ComicQuality, count = 0): number {
   const c = COMIC_QUALITY[q];
   const tiles = (c.width * c.height) / (512 * 512);
   const perPanel = tiles * 26.05 + c.refs * 0.88 * 5.37;
-  return Math.round(perPanel * ((c.panels[0] + c.panels[1]) / 2));
+  const [min, max] = panelRange(q, count);
+  return Math.round(perPanel * ((min + max) / 2));
 }
 
 /** The script instructions, asking for `panels` (min, max) pictures. */
-export const comicSystem = (panels: [number, number] = [4, 6]) => COMIC_SYSTEM.replace('4 to 6 pictures', `${panels[0]} to ${panels[1]} pictures`);
+export const comicSystem = (panels: [number, number] = [4, 6]) =>
+  COMIC_SYSTEM.replace(
+    '4 to 6 pictures',
+    panels[0] === panels[1] ? `exactly ${panels[0]} pictures` : `${panels[0]} to ${panels[1]} pictures`,
+  );
 
 export const COMIC_SYSTEM = `You choose the moments of a Chinese wuxia/xianxia web novel chapter that get an illustration inside the text, like the pictures in an illustrated novel.
 The chapter is given as numbered paragraphs ("[12] ..."). Return JSON with:
