@@ -51,8 +51,16 @@ export function chapterNeedsWork(nb: Notebook, chapter: number, lang: 'tr' | 'en
   const tr = nb.summaries[k];
   if (!tr) return true;
   if (tr === '—') return false;
-  if (lang === 'en') return !nb.summariesEn?.[k];
-  return !looksTurkish(tr);
+  if (lang === 'en' ? !nb.summariesEn?.[k] : !looksTurkish(tr)) return true;
+  // Character notes saved by older versions in one language only.
+  return nb.characters.some((c) =>
+    c.notes.some((n) => n.chapter === chapter && (lang === 'en' ? !n.en : !n.text || (!looksTurkish(n.text) && !n.en))),
+  );
+}
+
+/** Drop a chapter's character notes before it is processed again, so no one-language leftovers remain. */
+export function clearChapterNotes(nb: Notebook, chapter: number): Notebook {
+  return { ...nb, characters: nb.characters.map((c) => ({ ...c, notes: c.notes.filter((n) => n.chapter !== chapter) })) };
 }
 
 const MAX_NOTES = 24;

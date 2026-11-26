@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { secMsGecV2 } from '../src/lib/tts/drm';
 import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictionaryParse';
 import { tokenize } from '../src/lib/words';
-import { chapterNeedsWork, emptyNotebook, findCharacter, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { chapterNeedsWork, clearChapterNotes, emptyNotebook, findCharacter, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -337,6 +337,14 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(chapterNeedsWork(nb, 1, 'en'), true);
     assert.equal(chapterNeedsWork(nb, 2, 'en'), false);
     assert.equal(chapterNeedsWork(nb, 5, 'tr'), true);
+    const withNote = {
+      characters: [{ name: 'Chu Yang', aliases: [], notes: [{ chapter: 1, text: 'Genç bir mürit.' }], firstChapter: 1, lastChapter: 1, seenIn: [1] }],
+      summaries: { '1': 'Köye döner.' },
+      summariesEn: { '1': 'He returns.' },
+    };
+    assert.equal(chapterNeedsWork(withNote, 1, 'tr'), false);
+    assert.equal(chapterNeedsWork(withNote, 1, 'en'), true);
+    assert.equal(clearChapterNotes(withNote, 1).characters[0].notes.length, 0);
     assert.equal(noteText({ chapter: 0, text: 'Known as the Poisonous Sword Revered Martial Artist', en: 'x' }, 'tr'), 'x');
   });
 

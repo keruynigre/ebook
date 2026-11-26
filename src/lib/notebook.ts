@@ -9,7 +9,7 @@ import { GeminiError, analyzeChapters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { chapterNeedsWork, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { chapterNeedsWork, clearChapterNotes, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -187,7 +187,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
       }
       for (const r of results.sort((a, b) => a.index - b.index)) {
         // An empty summary still marks the chapter as done.
-        await update(bookId, (nb) => mergeChapterInfo(nb, r.index, { ...r.info, summary: r.info.summary || '—' }));
+        await update(bookId, (nb) => mergeChapterInfo(clearChapterNotes(nb, r.index), r.index, { ...r.info, summary: r.info.summary || '—' }));
       }
       at += batch.length;
       job.done = at;
