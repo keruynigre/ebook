@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, type ImageSourcePropType, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors } from '../lib/theme';
 
@@ -41,6 +41,44 @@ export function Button({
   );
 }
 
+/** A large square-ish button with an icon above its label. */
+export function IconTile({
+  icon,
+  title,
+  note,
+  onPress,
+  style,
+}: {
+  icon: ImageSourcePropType;
+  title: string;
+  note?: string;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.tile, { opacity: pressed ? 0.75 : 1 }, style]} accessibilityLabel={title}>
+      <Image source={icon} style={{ width: 40, height: 40, tintColor: colors.accent }} resizeMode="contain" />
+      <Text style={styles.tileText} numberOfLines={1}>
+        {title}
+      </Text>
+      {!!note && (
+        <Text style={{ color: colors.muted, fontSize: 12 }} numberOfLines={1}>
+          {note}
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
+/** A plain icon button for headers. */
+export function IconButton({ icon, onPress, label, size = 28 }: { icon: ImageSourcePropType; onPress: () => void; label: string; size?: number }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={10} style={({ pressed }) => ({ padding: 6, opacity: pressed ? 0.6 : 1 })} accessibilityLabel={label}>
+      <Image source={icon} style={{ width: size, height: size, tintColor: colors.text }} resizeMode="contain" />
+    </Pressable>
+  );
+}
+
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
@@ -74,6 +112,20 @@ export const ui = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  tile: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tileText: { color: colors.text, fontSize: 14, fontWeight: '700' },
   button: { paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   small: { paddingVertical: 8, paddingHorizontal: 12 },
   buttonText: { fontSize: 16, fontWeight: '700' },

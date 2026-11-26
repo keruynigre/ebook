@@ -3,7 +3,7 @@
     "name": "Ebook",
     "slug": "ebook",
     "scheme": "ebook",
-    "version": "1.0.24",
+    "version": "1.0.25",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -16,7 +16,7 @@
       "package": "com.keruynigre.ebook",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1E2530",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

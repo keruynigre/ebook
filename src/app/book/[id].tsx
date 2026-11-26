@@ -5,7 +5,8 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChapterSheet } from '../../components/ChapterSheet';
-import { Button, Card, ProgressBar, ui } from '../../components/ui';
+import { ICONS } from '../../components/icons';
+import { Button, Card, IconTile, ProgressBar, ui } from '../../components/ui';
 import { cancelDownload, startDownload, useDownload } from '../../lib/downloads';
 import { refreshChapterList, removeBook, useBook } from '../../lib/library';
 import { useSettings } from '../../lib/settings';
@@ -165,30 +166,17 @@ export default function BookScreen() {
         onPress={() => readIndex !== null && openChapter(readIndex)}
         disabled={readIndex === null}
       />
-      <View style={ui.row}>
-        <Button title={`📑 Bölümler · ${total}`} variant="secondary" onPress={() => setShowChapters(true)} style={{ flex: 1 }} />
-        <Button
-          title="📓 Hikâye defteri"
-          variant="secondary"
+      <View style={[ui.row, { flexWrap: 'wrap' }]}>
+        <IconTile icon={ICONS.chapters} title="Bölümler" note={`${total} bölüm`} onPress={() => setShowChapters(true)} />
+        <IconTile
+          icon={ICONS.notebook}
+          title="Hikâye defteri"
           onPress={() => router.push({ pathname: '/notebook/[id]', params: { id: book.id } })}
-          style={{ flex: 1 }}
         />
+        <IconTile icon={ICONS.search} title="Kitapta ara" onPress={() => router.push({ pathname: '/search/[id]', params: { id: book.id } })} />
+        <IconTile icon={ICONS.stats} title="İstatistik" onPress={() => router.push({ pathname: '/stats/[id]', params: { id: book.id } })} />
+        <IconTile icon={ICONS.words} title="Kelime defteri" onPress={() => router.push('/words')} />
       </View>
-      <View style={ui.row}>
-        <Button
-          title="🔍 Kitapta ara"
-          variant="secondary"
-          onPress={() => router.push({ pathname: '/search/[id]', params: { id: book.id } })}
-          style={{ flex: 1 }}
-        />
-        <Button
-          title="📊 İstatistik"
-          variant="secondary"
-          onPress={() => router.push({ pathname: '/stats/[id]', params: { id: book.id } })}
-          style={{ flex: 1 }}
-        />
-      </View>
-      <Button title="📒 Kelime defteri" variant="secondary" onPress={() => router.push('/words')} />
 
       <Card style={{ gap: 10 }}>
         <Text style={ui.h2}>İndirme ve çeviri</Text>

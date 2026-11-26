@@ -1,8 +1,9 @@
-import { Linking, Pressable, Switch, Text, View } from 'react-native';
+import { Image, Linking, Pressable, Switch, Text, View } from 'react-native';
 
 import { setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
 import { appVersion, checkForUpdate, RELEASES_PAGE, useUpdate, type UpdateInfo } from '../lib/updates';
+import { APP_ICON } from './icons';
 import { Button, Card, ui } from './ui';
 
 function UpdateText({ u }: { u: UpdateInfo }) {
@@ -43,8 +44,13 @@ export function UpdateCard() {
   };
   return (
     <Card style={{ gap: 10 }}>
-      <Text style={ui.h2}>Uygulama güncellemesi</Text>
-      <Text style={ui.text}>Bu sürüm: {appVersion()}</Text>
+      <View style={[ui.row, { alignItems: 'center', gap: 14 }]}>
+        <Image source={APP_ICON} style={{ width: 64, height: 64, borderRadius: 16 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={[ui.h2, { marginBottom: 2 }]}>Ebook</Text>
+          <Text style={ui.text}>Sürüm {appVersion()}</Text>
+        </View>
+      </View>
       {update ? (
         <>
           <UpdateText u={update} />

@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChapterSheet } from '../../../components/ChapterSheet';
+import { ICONS } from '../../../components/icons';
 import { InlinePicture } from '../../../components/InlinePicture';
 import { ReaderParagraph, type WordTap } from '../../../components/ReaderParagraph';
 import { Button, ProgressBar } from '../../../components/ui';
@@ -774,7 +775,7 @@ export default function Reader() {
                   <Image source={COMIC_ICON} style={{ width: 24, height: 24, tintColor: illustrate ? colors.accent : theme.text }} />
                 </Pressable>
                 <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
-                  <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>
+                  <Image source={ICONS.chapters} style={{ width: 22, height: 22, tintColor: theme.text }} resizeMode="contain" />
                 </Pressable>
                 <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
                   {highlightOn && narr.status !== 'paused' ? (
