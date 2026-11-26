@@ -39,7 +39,7 @@ export default function NotebookScreen() {
 
   // Never show what lies beyond the reading point.
   const upTo = book?.progress?.index ?? (book?.downloaded.length ? Math.max(...book.downloaded) : -1);
-  const missing = useMemo(() => (nb && book ? missingChapters(id, nb, upTo) : []), [nb, book, id, upTo]);
+  const missing = useMemo(() => (nb && book ? missingChapters(id, nb, upTo, lang) : []), [nb, book, id, upTo, lang]);
   const q = normName(query);
 
   const characters = useMemo(() => {
@@ -80,7 +80,7 @@ export default function NotebookScreen() {
       ]);
       return;
     }
-    fillNotebook(id, upTo).catch(() => undefined);
+    fillNotebook(id, upTo, lang).catch(() => undefined);
   };
 
   const saveTerm = async () => {
@@ -134,7 +134,7 @@ export default function NotebookScreen() {
           <>
             <Text style={ui.text}>
               {missing.length
-                ? `Okuduğun yere kadar (${upTo + 1}. bölüm) ${missing.length} bölüm henüz deftere işlenmedi.`
+                ? `Okuduğun yere kadar (${upTo + 1}. bölüm) ${missing.length} bölümün ${lang === 'en' ? 'İngilizce' : 'Türkçe'} notu yok ya da eksik.`
                 : `Defter ${upTo + 1}. bölüme kadar güncel.`}
             </Text>
             <Text style={ui.muted}>

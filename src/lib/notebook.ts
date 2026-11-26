@@ -9,7 +9,7 @@ import { GeminiError, analyzeChapters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { chapterNeedsWork, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -105,11 +105,11 @@ export function useNotebookJob(bookId: string): NotebookJob | undefined {
   return jobs.get(bookId);
 }
 
-/** Downloaded chapters up to `upTo` (inclusive) that have no summary yet. */
-export function missingChapters(bookId: string, nb: Notebook, upTo: number): number[] {
+/** Downloaded chapters up to `upTo` (inclusive) with no notes yet, or none in the reader's language. */
+export function missingChapters(bookId: string, nb: Notebook, upTo: number, lang: 'tr' | 'en'): number[] {
   const book = getBook(bookId);
   if (!book) return [];
-  return book.downloaded.filter((i) => i <= upTo && !nb.summaries[String(i)]).sort((a, b) => a - b);
+  return book.downloaded.filter((i) => i <= upTo && chapterNeedsWork(nb, i, lang)).sort((a, b) => a - b);
 }
 
 const BATCH_CHARS = 28_000;
@@ -120,7 +120,7 @@ export function stopNotebookJob(bookId: string) {
   stopRequested.add(bookId);
 }
 
-export async function fillNotebook(bookId: string, upTo: number): Promise<void> {
+export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'en'): Promise<void> {
   if (jobs.get(bookId)?.running) return;
   stopRequested.delete(bookId);
   const book = getBook(bookId);
@@ -130,7 +130,7 @@ export async function fillNotebook(bookId: string, upTo: number): Promise<void> 
     setJob(bookId, { running: false, done: 0, total: 0, message: '', error: 'Önce Ayarlar’dan Gemini anahtarı girin.' });
     return;
   }
-  const todo = missingChapters(bookId, await loadNotebook(bookId), upTo);
+  const todo = missingChapters(bookId, await loadNotebook(bookId), upTo, lang);
   const job: NotebookJob = { running: true, done: 0, total: todo.length, message: 'Hazırlanıyor…' };
   setJob(bookId, { ...job });
   const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);

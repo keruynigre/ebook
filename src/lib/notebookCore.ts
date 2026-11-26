@@ -35,8 +35,25 @@ export interface ChapterInfo {
 
 export const emptyNotebook = (): Notebook => ({ characters: [], summaries: {}, summariesEn: {} });
 
-/** Text of a note / summary in the reader's language, falling back to the other one. */
-export const noteText = (n: CharacterNote, lang: 'tr' | 'en') => (lang === 'en' ? n.en || n.text : n.text || n.en || '');
+/** Rough check: text with no Turkish-only letters is taken as English (old notes stored one language only). */
+export const looksTurkish = (s: string) => /[çğıöşüÇĞİÖŞÜ]/.test(s) || s.trim().length < 25;
+
+/** Text of a note in the reader's language, falling back to the other one. */
+export function noteText(n: CharacterNote, lang: 'tr' | 'en'): string {
+  if (lang === 'en') return n.en || n.text;
+  if (n.text && (looksTurkish(n.text) || !n.en)) return n.text;
+  return n.en || n.text || '';
+}
+
+/** Whether a chapter still has to be (re)processed so the notebook can show it in `lang`. */
+export function chapterNeedsWork(nb: Notebook, chapter: number, lang: 'tr' | 'en'): boolean {
+  const k = String(chapter);
+  const tr = nb.summaries[k];
+  if (!tr) return true;
+  if (tr === '—') return false;
+  if (lang === 'en') return !nb.summariesEn?.[k];
+  return !looksTurkish(tr);
+}
 
 const MAX_NOTES = 24;
 
