@@ -2,6 +2,7 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollViewInstance,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -41,6 +43,8 @@ import {
 import { VOICES, voiceName } from '../../../lib/tts/voices';
 
 const SAVE_EVERY_MS = 1500;
+/** Height of the top bar (chapter number, listen, Aa). */
+const BAR_H = 52;
 const RATES = [0.75, 1, 1.15, 1.3, 1.5, 1.75, 2];
 const BUBBLE: Record<ReaderTheme, { card: string; text: string; muted: string; border: string }> = {
   dark: { card: '#262a33', text: '#eef0f4', muted: '#9aa0ad', border: '#3a3f4b' },
@@ -71,6 +75,7 @@ export default function Reader() {
   // Custom fonts carry their own bold file; the system font uses fontWeight.
   const titleFont = font.bold ? { fontFamily: font.bold } : { fontWeight: '700' as const };
   const insets = useSafeAreaInsets();
+  const winH = useWindowDimensions().height;
 
   const scroll = useRef<ScrollViewInstance>(null);
   const [chapter, setChapter] = useState<ChapterContent | null | undefined>(undefined);
@@ -83,9 +88,33 @@ export default function Reader() {
   // Paragraph positions inside the scroll content, for auto-scroll and "start here".
   const paraLayout = useRef<{ y: number; h: number }[]>([]);
   const scrollY = useRef(0);
-  // The top bar hides while reading on (finger moving up) and comes back with one move down.
-  const [barHidden, setBarHidden] = useState(false);
-  const barTurn = useRef(0);
+  // The top bar slides away as the text is scrolled on, as far as the finger moves, and back the same way.
+  const barOff = useRef(0);
+  const [barY] = useState(() => new Animated.Value(0));
+  const snapBar = useCallback(
+    (to: number) => {
+      barOff.current = to;
+      Animated.timing(barY, { toValue: -to, duration: 160, useNativeDriver: true }).start();
+    },
+    [barY],
+  );
+  // Finger on the text: the bar follows it. Momentum after lifting the finger moves it too, then it settles fully in or out.
+  const dragging = useRef(false);
+  const endTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleBar = useCallback(() => {
+    if (endTimer.current) clearTimeout(endTimer.current);
+    endTimer.current = null;
+    const off = barOff.current;
+    if (off > 0 && off < BAR_H) snapBar(off > BAR_H / 2 && scrollY.current > BAR_H ? BAR_H : 0);
+  }, [snapBar]);
+  const endDrag = useCallback(() => {
+    // Without momentum no end event follows, so settle shortly unless momentum starts.
+    if (endTimer.current) clearTimeout(endTimer.current);
+    endTimer.current = setTimeout(() => {
+      dragging.current = false;
+      settleBar();
+    }, 250);
+  }, [settleBar]);
   const userScrollAt = useRef(0);
   const [translation, setTranslation] = useState<ChapterContent | null>(null);
   // Which chapter the loaded texts belong to (state lags one render behind the route).
@@ -294,11 +323,12 @@ export default function Reader() {
     position.current = range > 0 ? Math.min(1, Math.max(0, contentOffset.y / range)) : 0;
     const dy = contentOffset.y - scrollY.current;
     scrollY.current = contentOffset.y;
-    if (Date.now() - userScrollAt.current < 3000 && dy !== 0) {
-      // Distance moved since the scroll last changed direction, so small jitters do nothing.
-      barTurn.current = Math.sign(dy) === Math.sign(barTurn.current) ? barTurn.current + dy : dy;
-      if (contentOffset.y < 40 || barTurn.current < -12) setBarHidden(false);
-      else if (barTurn.current > 30 && contentOffset.y > 80) setBarHidden(true);
+    if (dragging.current && dy !== 0) {
+      const off = Math.min(BAR_H, Math.max(0, barOff.current + dy), Math.max(0, contentOffset.y));
+      if (off !== barOff.current) {
+        barOff.current = off;
+        barY.setValue(-off);
+      }
     }
     const p = Math.round(position.current * 100);
     if (p !== pct || scrollPct.index !== i) setScrollPct({ index: i, pct: p });
@@ -309,7 +339,7 @@ export default function Reader() {
   const has = (k: number) => !!book?.downloaded.includes(k);
   const go = (k: number) => {
     save();
-    setBarHidden(false);
+    snapBar(0);
     restoreTo.current = 0;
     router.setParams({ index: String(k) });
   };
@@ -348,118 +378,8 @@ export default function Reader() {
     setSettings({ fontSize: Math.min(30, Math.max(13, settings.fontSize + delta)) });
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: barHidden ? insets.top : 0 }}>
-      <Stack.Screen
-        options={{
-          headerShown: !barHidden,
-          title: total ? `${i + 1} / ${total}` : '',
-          headerStyle: { backgroundColor: theme.bg },
-          headerTintColor: theme.text,
-          contentStyle: { backgroundColor: theme.bg },
-          headerRight: () => (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Pressable
-                onPress={() => {
-                  save();
-                  router.push(`/comic/${id}/${i}`);
-                }}
-                hitSlop={10}
-                style={{ paddingHorizontal: 6 }}
-                accessibilityLabel="Resimli oku"
-              >
-                <Text style={{ color: theme.text, fontSize: 19 }}>🖼</Text>
-              </Pressable>
-              <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
-                <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>
-              </Pressable>
-              <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
-                <Text style={{ color: theme.text, fontSize: 20 }}>{highlightOn && narr.status !== 'paused' ? '⏸' : '🎧'}</Text>
-              </Pressable>
-              <Pressable onPress={() => setShowSettings((v) => !v)} hitSlop={10} style={{ paddingHorizontal: 8 }}>
-                <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Aa</Text>
-              </Pressable>
-            </View>
-          ),
-        }}
-      />
-
-      {showSettings && (
-        <ScrollView
-          style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted, maxHeight: '75%' }]}
-          contentContainerStyle={{ gap: 10 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı boyutu</Text>
-            <Button small variant="secondary" title="A−" onPress={() => changeFont(-1)} />
-            <Text style={{ color: theme.text, width: 32, textAlign: 'center' }}>{settings.fontSize}</Text>
-            <Button small variant="secondary" title="A+" onPress={() => changeFont(1)} />
-          </View>
-          <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı tipi</Text>
-            <Pressable
-              onPress={() => setShowFonts(true)}
-              style={[styles.select, { borderColor: theme.muted }]}
-            >
-              <Text style={[{ color: theme.text, fontSize: 15, flex: 1 }, bodyFont]} numberOfLines={1}>
-                {font.label}
-              </Text>
-              <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
-            </Pressable>
-          </View>
-          <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Sesli okuma</Text>
-            <Pressable onPress={() => setShowVoices(true)} style={[styles.select, { borderColor: theme.muted }]}>
-              <Text style={{ color: theme.text, fontSize: 15, flex: 1 }} numberOfLines={1}>
-                {voiceName(settings.ttsVoiceTr)} · {voiceName(settings.ttsVoiceEn)}
-              </Text>
-              <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
-            </Pressable>
-          </View>
-          <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Satır aralığı</Text>
-            {[1.4, 1.6, 1.9].map((lh) => (
-              <Button
-                key={lh}
-                small
-                variant={settings.lineHeight === lh ? 'primary' : 'secondary'}
-                title={lh === 1.4 ? 'Sık' : lh === 1.6 ? 'Normal' : 'Geniş'}
-                onPress={() => setSettings({ lineHeight: lh })}
-              />
-            ))}
-          </View>
-          <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Dil</Text>
-            <Button
-              small
-              variant={settings.showTranslation ? 'primary' : 'secondary'}
-              title="Türkçe"
-              onPress={() => setSettings({ showTranslation: true })}
-            />
-            <Button
-              small
-              variant={!settings.showTranslation ? 'primary' : 'secondary'}
-              title="Orijinal"
-              onPress={() => setSettings({ showTranslation: false })}
-            />
-          </View>
-          <View style={styles.panelRow}>
-            <Text style={[styles.panelLabel, { color: theme.text }]}>Tema</Text>
-            {(Object.keys(READER_THEMES) as ReaderTheme[]).map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setSettings({ theme: t })}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: READER_THEMES[t].bg, borderColor: settings.theme === t ? colors.accent : theme.muted },
-                ]}
-              >
-                <Text style={{ color: READER_THEMES[t].text, fontSize: 13, fontWeight: '600' }}>{READER_THEMES[t].label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-      )}
+    <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}>
+      <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: theme.bg } }} />
 
       <Modal visible={showFonts} transparent animationType="fade" onRequestClose={() => setShowFonts(false)}>
         <Pressable style={styles.backdrop} onPress={() => setShowFonts(false)}>
@@ -519,86 +439,223 @@ export default function Reader() {
         </Pressable>
       </Modal>
 
-      <ScrollView
-        ref={scroll}
-        onScroll={onScroll}
-        scrollEventThrottle={100}
-        onScrollBeginDrag={() => {
-          userScrollAt.current = Date.now();
-        }}
-        onMomentumScrollEnd={() => {
-          userScrollAt.current = Date.now();
-        }}
-        onLayout={(e) => {
-          sizes.current.view = e.nativeEvent.layout.height;
-          tryRestore();
-        }}
-        onContentSizeChange={(_w, h) => {
-          sizes.current.content = h;
-          tryRestore();
-        }}
-        contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 16, paddingBottom: 28 }}
-      >
-        <Text
-          style={[
-            { color: theme.text, fontSize: settings.fontSize + 5, marginBottom: 18, lineHeight: (settings.fontSize + 5) * 1.3 },
-            titleFont,
-            highlightOn && narr.para === -1 ? { backgroundColor: colors.accent + '33' } : null,
-          ]}
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+        <ScrollView
+          ref={scroll}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onScrollBeginDrag={() => {
+            userScrollAt.current = Date.now();
+            dragging.current = true;
+          }}
+          onScrollEndDrag={() => {
+            userScrollAt.current = Date.now();
+            endDrag();
+          }}
+          onMomentumScrollBegin={() => {
+            if (endTimer.current) clearTimeout(endTimer.current);
+            endTimer.current = null;
+            dragging.current = true;
+          }}
+          onMomentumScrollEnd={() => {
+            userScrollAt.current = Date.now();
+            dragging.current = false;
+            settleBar();
+          }}
+          onLayout={(e) => {
+            sizes.current.view = e.nativeEvent.layout.height;
+            tryRestore();
+          }}
+          onContentSizeChange={(_w, h) => {
+            sizes.current.content = h;
+            tryRestore();
+          }}
+          contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 16 + BAR_H, paddingBottom: 28 }}
         >
-          {title}
-        </Text>
-        {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
-        {translateBox}
-        {shown?.paragraphs.map((p, k) => (
-          <ReaderParagraph
-            key={k}
-            index={k}
-            text={p}
-            style={/^[*\s~=\-–—•·]{3,}$/.test(p) ? centerStyle : paraStyle}
-            hlStart={highlightOn && narr.para === k ? narr.start : -1}
-            hlEnd={highlightOn && narr.para === k ? narr.end : -1}
-            hlColor={colors.accent + '66'}
-            onWord={onWord}
-            onLayout={onParaLayout}
-          />
-        ))}
+          <Text
+            style={[
+              { color: theme.text, fontSize: settings.fontSize + 5, marginBottom: 18, lineHeight: (settings.fontSize + 5) * 1.3 },
+              titleFont,
+              highlightOn && narr.para === -1 ? { backgroundColor: colors.accent + '33' } : null,
+            ]}
+          >
+            {title}
+          </Text>
+          {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
+          {translateBox}
+          {shown?.paragraphs.map((p, k) => (
+            <ReaderParagraph
+              key={k}
+              index={k}
+              text={p}
+              style={/^[*\s~=\-–—•·]{3,}$/.test(p) ? centerStyle : paraStyle}
+              hlStart={highlightOn && narr.para === k ? narr.start : -1}
+              hlEnd={highlightOn && narr.para === k ? narr.end : -1}
+              hlColor={colors.accent + '66'}
+              onWord={onWord}
+              onLayout={onParaLayout}
+            />
+          ))}
 
-        {!!shown?.notes?.length && (
-          <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.muted, gap: 6 }}>
-            <Text style={{ color: theme.muted, fontWeight: '700', fontSize: Math.max(13, settings.fontSize - 4) }}>Çevirmen notları</Text>
-            {shown.notes.map((n, k) => (
-              <Text key={k} selectable style={{ color: theme.muted, fontSize: Math.max(13, settings.fontSize - 4), lineHeight: Math.max(13, settings.fontSize - 4) * 1.45 }}>
-                {n}
-              </Text>
-            ))}
-          </View>
-        )}
-
-        {translateBox}
-
-        {chapter && (
-          <View style={{ gap: 10, marginTop: 16 }}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Button title="‹ Önceki" variant="secondary" onPress={() => go(i - 1)} disabled={!has(i - 1)} style={{ flex: 1 }} />
-              <Button title="Sonraki ›" onPress={() => go(i + 1)} disabled={!has(i + 1)} style={{ flex: 1 }} />
-            </View>
-            {nextMissing && !downloading && (
-              <Button title="Sonraki 10 bölümü indir" variant="secondary" onPress={downloadNext} />
-            )}
-            {downloading && download && (
-              <View style={{ gap: 6 }}>
-                <ProgressBar value={(download.done + download.failed) / Math.max(1, download.total)} />
-                <Text style={{ color: theme.muted, fontSize: 13 }}>
-                  İndiriliyor {download.done + download.failed + 1}/{download.total}
-                  {has(i + 1) ? ' · sonraki bölüm hazır' : ''}
+          {!!shown?.notes?.length && (
+            <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.muted, gap: 6 }}>
+              <Text style={{ color: theme.muted, fontWeight: '700', fontSize: Math.max(13, settings.fontSize - 4) }}>Çevirmen notları</Text>
+              {shown.notes.map((n, k) => (
+                <Text key={k} selectable style={{ color: theme.muted, fontSize: Math.max(13, settings.fontSize - 4), lineHeight: Math.max(13, settings.fontSize - 4) * 1.45 }}>
+                  {n}
                 </Text>
+              ))}
+            </View>
+          )}
+
+          {translateBox}
+
+          {chapter && (
+            <View style={{ gap: 10, marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Button title="‹ Önceki" variant="secondary" onPress={() => go(i - 1)} disabled={!has(i - 1)} style={{ flex: 1 }} />
+                <Button title="Sonraki ›" onPress={() => go(i + 1)} disabled={!has(i + 1)} style={{ flex: 1 }} />
               </View>
-            )}
-            {!nextExists && <Text style={{ color: theme.muted, textAlign: 'center' }}>Son bölüme geldiniz.</Text>}
-          </View>
-        )}
-      </ScrollView>
+              {nextMissing && !downloading && (
+                <Button title="Sonraki 10 bölümü indir" variant="secondary" onPress={downloadNext} />
+              )}
+              {downloading && download && (
+                <View style={{ gap: 6 }}>
+                  <ProgressBar value={(download.done + download.failed) / Math.max(1, download.total)} />
+                  <Text style={{ color: theme.muted, fontSize: 13 }}>
+                    İndiriliyor {download.done + download.failed + 1}/{download.total}
+                    {has(i + 1) ? ' · sonraki bölüm hazır' : ''}
+                  </Text>
+                </View>
+              )}
+              {!nextExists && <Text style={{ color: theme.muted, textAlign: 'center' }}>Son bölüme geldiniz.</Text>}
+            </View>
+          )}
+        </ScrollView>
+        <Animated.View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            transform: [{ translateY: showSettings ? 0 : barY }],
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.bar,
+              { backgroundColor: theme.bg, borderColor: theme.muted + '44' },
+              !showSettings && { opacity: barY.interpolate({ inputRange: [-BAR_H, 0], outputRange: [0, 1], extrapolate: 'clamp' }) },
+            ]}
+          >
+            <Pressable onPress={() => router.back()} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Geri">
+              <Text style={{ color: theme.text, fontSize: 24 }}>←</Text>
+            </Pressable>
+            <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700', flex: 1, marginLeft: 6 }} numberOfLines={1}>
+              {total ? `${i + 1} / ${total}` : ''}
+            </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Pressable
+                  onPress={() => {
+                    save();
+                    router.push(`/comic/${id}/${i}`);
+                  }}
+                  hitSlop={10}
+                  style={{ paddingHorizontal: 6 }}
+                  accessibilityLabel="Resimli oku"
+                >
+                  <Text style={{ color: theme.text, fontSize: 19 }}>🖼</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowChapters(true)} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Bölümler">
+                  <Text style={{ color: theme.text, fontSize: 20 }}>☰</Text>
+                </Pressable>
+                <Pressable onPress={listen} hitSlop={10} style={{ paddingHorizontal: 8 }} accessibilityLabel="Sesli oku">
+                  <Text style={{ color: theme.text, fontSize: 20 }}>{highlightOn && narr.status !== 'paused' ? '⏸' : '🎧'}</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowSettings((v) => !v)} hitSlop={10} style={{ paddingHorizontal: 8 }}>
+                  <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Aa</Text>
+                </Pressable>
+              </View>
+          </Animated.View>
+          {showSettings && (
+            <ScrollView
+              style={[styles.panel, { backgroundColor: theme.bg, borderColor: theme.muted, maxHeight: winH * 0.65 }]}
+              contentContainerStyle={{ gap: 10 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı boyutu</Text>
+                <Button small variant="secondary" title="A−" onPress={() => changeFont(-1)} />
+                <Text style={{ color: theme.text, width: 32, textAlign: 'center' }}>{settings.fontSize}</Text>
+                <Button small variant="secondary" title="A+" onPress={() => changeFont(1)} />
+              </View>
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Yazı tipi</Text>
+                <Pressable
+                  onPress={() => setShowFonts(true)}
+                  style={[styles.select, { borderColor: theme.muted }]}
+                >
+                  <Text style={[{ color: theme.text, fontSize: 15, flex: 1 }, bodyFont]} numberOfLines={1}>
+                    {font.label}
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
+                </Pressable>
+              </View>
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Sesli okuma</Text>
+                <Pressable onPress={() => setShowVoices(true)} style={[styles.select, { borderColor: theme.muted }]}>
+                  <Text style={{ color: theme.text, fontSize: 15, flex: 1 }} numberOfLines={1}>
+                    {voiceName(settings.ttsVoiceTr)} · {voiceName(settings.ttsVoiceEn)}
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 14 }}>▾</Text>
+                </Pressable>
+              </View>
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Satır aralığı</Text>
+                {[1.4, 1.6, 1.9].map((lh) => (
+                  <Button
+                    key={lh}
+                    small
+                    variant={settings.lineHeight === lh ? 'primary' : 'secondary'}
+                    title={lh === 1.4 ? 'Sık' : lh === 1.6 ? 'Normal' : 'Geniş'}
+                    onPress={() => setSettings({ lineHeight: lh })}
+                  />
+                ))}
+              </View>
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Dil</Text>
+                <Button
+                  small
+                  variant={settings.showTranslation ? 'primary' : 'secondary'}
+                  title="Türkçe"
+                  onPress={() => setSettings({ showTranslation: true })}
+                />
+                <Button
+                  small
+                  variant={!settings.showTranslation ? 'primary' : 'secondary'}
+                  title="Orijinal"
+                  onPress={() => setSettings({ showTranslation: false })}
+                />
+              </View>
+              <View style={styles.panelRow}>
+                <Text style={[styles.panelLabel, { color: theme.text }]}>Tema</Text>
+                {(Object.keys(READER_THEMES) as ReaderTheme[]).map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => setSettings({ theme: t })}
+                    style={[
+                      styles.swatch,
+                      { backgroundColor: READER_THEMES[t].bg, borderColor: settings.theme === t ? colors.accent : theme.muted },
+                    ]}
+                  >
+                    <Text style={{ color: READER_THEMES[t].text, fontSize: 13, fontWeight: '600' }}>{READER_THEMES[t].label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+        </Animated.View>
+      </View>
 
       {book && (
         <ChapterSheet
@@ -710,6 +767,13 @@ export default function Reader() {
 }
 
 const styles = StyleSheet.create({
+  bar: {
+    height: BAR_H,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   panel: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexGrow: 0, flexShrink: 0 },
   panelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelLabel: { width: 100, fontSize: 14 },
