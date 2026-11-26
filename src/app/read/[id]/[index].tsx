@@ -19,7 +19,7 @@ import { ReaderParagraph, type WordTap } from '../../../components/ReaderParagra
 import { Button, ProgressBar } from '../../../components/ui';
 import { WordBubble, type BubbleTarget } from '../../../components/WordBubble';
 import { startDownload, useDownload } from '../../../lib/downloads';
-import { chapterPosition, saveProgress, useBook } from '../../../lib/library';
+import { chapterPosition, getBook, saveProgress, useBook } from '../../../lib/library';
 import { autoFillNotebook } from '../../../lib/notebook';
 import { READER_FONTS, type ReaderFont } from '../../../lib/fonts';
 import { READER_THEMES, setSettings, useSettings, type ReaderTheme } from '../../../lib/settings';
@@ -124,6 +124,18 @@ export default function Reader() {
       save();
     };
   }, [id, i, save]);
+
+  // Translate the chapter as soon as it is opened (setting), and the next one so it is ready in time.
+  useEffect(() => {
+    if (!settings.translateOnOpen || !settings.showTranslation || !settings.hasGeminiKey) return;
+    const t = setTimeout(() => {
+      const b = getBook(id);
+      if (!b?.downloaded.includes(i)) return;
+      const want = [i, i + 1].filter((k) => b.downloaded.includes(k) && !b.translated?.includes(k));
+      if (want.length) startDownload(id, want, { translate: true }).catch(() => undefined);
+    }, 1_500);
+    return () => clearTimeout(t);
+  }, [id, i, settings.translateOnOpen, settings.showTranslation, settings.hasGeminiKey]);
 
   // Keep the story notebook up to date as the reader moves on (after a short stay, not while flipping through).
   const notebookLang: 'tr' | 'en' = settings.showTranslation ? 'tr' : 'en';
@@ -301,6 +313,25 @@ export default function Reader() {
       () => undefined,
     );
   };
+
+  const translateBox = chapter && !isTranslated && (
+    <View style={{ gap: 6, marginTop: 4, marginBottom: 14 }}>
+        {settings.hasGeminiKey ? (
+          <Button
+            small
+            variant="secondary"
+            title={downloading ? (download?.translating ? 'Çeviri sürüyor…' : 'İndirme sürüyor…') : 'Bu bölümü Türkçeye çevir'}
+            disabled={downloading}
+            onPress={() => startDownload(id, [i], { translate: true }).catch(() => undefined)}
+          />
+        ) : (
+          <Text style={{ color: theme.muted, fontSize: 13 }}>Türkçe çeviri için Ayarlar’dan Gemini anahtarı girin.</Text>
+        )}
+        {download?.translateError && !downloading && (
+          <Text style={{ color: colors.danger, fontSize: 13 }}>{download.translateError}</Text>
+        )}
+      </View>
+  );
 
   const changeFont = (delta: number) =>
     setSettings({ fontSize: Math.min(30, Math.max(13, settings.fontSize + delta)) });
@@ -506,6 +537,7 @@ export default function Reader() {
           {title}
         </Text>
         {chapter === null && <Text style={{ color: colors.danger }}>Bu bölüm indirilmemiş.</Text>}
+        {translateBox}
         {shown?.paragraphs.map((p, k) => (
           <ReaderParagraph
             key={k}
@@ -531,24 +563,7 @@ export default function Reader() {
           </View>
         )}
 
-        {chapter && !isTranslated && (
-          <View style={{ gap: 6, marginTop: 4, marginBottom: 8 }}>
-            {settings.hasGeminiKey ? (
-              <Button
-                small
-                variant="secondary"
-                title={downloading ? 'Çeviri sürüyor…' : 'Bu bölümü Türkçeye çevir'}
-                disabled={downloading}
-                onPress={() => startDownload(id, [i], { translate: true }).catch(() => undefined)}
-              />
-            ) : (
-              <Text style={{ color: theme.muted, fontSize: 13 }}>Türkçe çeviri için Ayarlar’dan Gemini anahtarı girin.</Text>
-            )}
-            {download?.translateError && !downloading && (
-              <Text style={{ color: colors.danger, fontSize: 13 }}>{download.translateError}</Text>
-            )}
-          </View>
-        )}
+        {translateBox}
 
         {chapter && (
           <View style={{ gap: 10, marginTop: 16 }}>

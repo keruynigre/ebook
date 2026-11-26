@@ -16,6 +16,8 @@ export interface ReaderSettings {
   showTranslation: boolean;
   /** Translate chapters right after downloading them. */
   autoTranslate: boolean;
+  /** Translate an untranslated chapter as soon as it is opened (and get the next one ready). */
+  translateOnOpen: boolean;
   /** Gemini model name, e.g. "models/gemini-…-flash". */
   geminiModel: string;
   /** Models this key can use, best first; tried in turn when one is busy. */
@@ -57,6 +59,7 @@ const DEFAULTS: ReaderSettings = {
   fontFamily: 'system',
   showTranslation: true,
   autoTranslate: false,
+  translateOnOpen: false,
   geminiModel: '',
   geminiModels: [],
   translateConcurrency: 1,

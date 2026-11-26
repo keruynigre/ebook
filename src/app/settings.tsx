@@ -246,6 +246,18 @@ export default function SettingsScreen() {
         </View>
         <View style={[ui.row, { justifyContent: 'space-between' }]}>
           <View style={{ flex: 1 }}>
+            <Text style={ui.text}>Açtığım bölümü kendiliğinden çevir</Text>
+            <Text style={ui.muted}>Çevrilmemiş bir bölümü açınca çeviri hemen başlar, sonraki bölüm de önceden çevrilir.</Text>
+          </View>
+          <Switch
+            value={settings.translateOnOpen}
+            onValueChange={(v) => setSettings({ translateOnOpen: v })}
+            disabled={!settings.hasGeminiKey}
+            trackColor={{ true: colors.accent }}
+          />
+        </View>
+        <View style={[ui.row, { justifyContent: 'space-between' }]}>
+          <View style={{ flex: 1 }}>
             <Text style={ui.text}>Okurken Türkçeyi göster</Text>
             <Text style={ui.muted}>Kapalıysa orijinal metin gösterilir.</Text>
           </View>
