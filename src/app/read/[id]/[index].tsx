@@ -384,11 +384,16 @@ export default function Reader() {
         tryRestore();
         return;
       }
+      // Scroll events are ignored while restoring, so record where the text now is:
+      // auto-scroll carries on from scrollY and must not use the previous chapter's spot.
+      let y = 0;
       if (jp) {
         jumpPara.current = null;
         router.setParams({ para: undefined });
-        scroll.current?.scrollTo({ y: Math.max(0, jp.y - view * 0.25), animated: false });
-      } else if (content > view && target > 0) scroll.current?.scrollTo({ y: target * (content - view), animated: false });
+        y = Math.max(0, jp.y - view * 0.25);
+      } else if (content > view && target > 0) y = target * (content - view);
+      scroll.current?.scrollTo({ y, animated: false });
+      scrollY.current = y;
       restoreTo.current = null;
     }, 150);
   };
@@ -433,6 +438,7 @@ export default function Reader() {
     save();
     snapBar(0);
     restoreTo.current = 0;
+    scrollY.current = 0;
     router.setParams({ index: String(k) });
   };
   // ---- auto-scroll: the text moves on by itself at the chosen speed ----
