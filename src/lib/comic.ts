@@ -439,7 +439,8 @@ async function drawChapter(bookId: string, index: number) {
         let image: string;
         if (tries < 2) {
           // FLUX.2 with the style picture and the characters' reference cards.
-          const names = castNames(panel, cast).slice(0, Math.max(1, quality.refs - (styleFile ? 1 : 0)));
+          // Modern manhua: no portrait cards; they made every picture a centered, front-facing character.
+          const names = webtoon ? [] : castNames(panel, cast).slice(0, Math.max(1, quality.refs - (styleFile ? 1 : 0)));
           const cards: { name: string; file: File }[] = [];
           for (const n of names) {
             update({ message: `${n} için karakter kartı hazırlanıyor…` });
