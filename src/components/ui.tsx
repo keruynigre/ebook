@@ -13,8 +13,11 @@ export function Button({
   busy,
   style,
   small,
+  icon,
 }: {
   title: string;
+  /** Optional picture before the label, tinted like the text. */
+  icon?: ImageSourcePropType;
   onPress: () => void;
   variant?: Variant;
   disabled?: boolean;
@@ -36,7 +39,14 @@ export function Button({
         style,
       ]}
     >
-      {busy ? <ActivityIndicator color={fg} /> : <Text style={[styles.buttonText, small && { fontSize: 14 }, { color: fg }]}>{title}</Text>}
+      {busy ? (
+        <ActivityIndicator color={fg} />
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {icon && <Image source={icon} style={{ width: small ? 18 : 22, height: small ? 18 : 22, tintColor: colors.accent }} resizeMode="contain" />}
+          <Text style={[styles.buttonText, small && { fontSize: 14 }, { color: fg }]}>{title}</Text>
+        </View>
+      )}
     </Pressable>
   );
 }

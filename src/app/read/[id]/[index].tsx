@@ -903,7 +903,8 @@ export default function Reader() {
             <View style={{ padding: 12, flexDirection: 'row', gap: 8 }}>
               <Button
                 variant="secondary"
-                title="📓 Defter"
+                title="Defter"
+                icon={ICONS.notebook}
                 style={{ flex: 1 }}
                 onPress={() => {
                   setShowChapters(false);
@@ -912,7 +913,8 @@ export default function Reader() {
               />
               <Button
                 variant="secondary"
-                title="📊 İstatistik"
+                title="İstatistik"
+                icon={ICONS.stats}
                 style={{ flex: 1 }}
                 onPress={() => {
                   setShowChapters(false);
