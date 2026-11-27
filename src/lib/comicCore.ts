@@ -28,8 +28,15 @@ export interface ComicScript {
 /** Name → fixed English look, kept for the whole book so characters stay the same from panel to panel. */
 export type ComicCast = Record<string, string>;
 
-/** Wuxia manhua look: black-and-white ink with screentones, or full colour. */
-export function comicStyle(color: boolean): string {
+/** How pictures are drawn: false = black and white, true = colour, 'webtoon' = modern colour manhua with dynamic camera. */
+export type ArtMode = boolean | 'webtoon';
+
+const WEBTOON_STYLE =
+  'modern Chinese manhua webtoon art, full color digital painting, bold clean black lineart, sharp cel shading with soft gradients, glossy highlights, glowing energy effects, cinematic rim lighting, dramatic dynamic camera angle, strong perspective, beautiful idealized faces with sharp eyes, long flowing hair, detailed hanfu robes with gold trim, ancient Chinese setting';
+
+/** Wuxia manhua look: black-and-white ink with screentones, full colour, or modern webtoon. */
+export function comicStyle(color: ArtMode): string {
+  if (color === 'webtoon') return WEBTOON_STYLE;
   return color
     ? 'full color Chinese wuxia manhua illustration, clean ink line art, vibrant cel shading, rich colors, cinematic composition, ancient Chinese setting'
     : 'black and white manga illustration, Chinese wuxia manhua, detailed ink line art, screentone shading, high contrast, cinematic composition, ancient Chinese setting, monochrome, no color';
@@ -130,7 +137,7 @@ export function castNames(panel: ComicPanel, cast: ComicCast): string[] {
 }
 
 /** Prompt for a character's reference card (portrait on a plain background). */
-export function cardPrompt(name: string, look: string, color = false, styleRef = false): string {
+export function cardPrompt(name: string, look: string, color: ArtMode = false, styleRef = false): string {
   return [
     styleRef ? 'Draw in the art style of image 0 (style reference only)' : '',
     comicStyle(color),
@@ -144,7 +151,7 @@ export function cardPrompt(name: string, look: string, color = false, styleRef =
 }
 
 /** Text prompt for one panel picture. */
-export function panelPrompt(panel: ComicPanel, cast: ComicCast, color = false, refs: PromptRefs = {}): string {
+export function panelPrompt(panel: ComicPanel, cast: ComicCast, color: ArtMode = false, refs: PromptRefs = {}): string {
   const STYLE = comicStyle(color);
   const people = panel.characters
     .map((n) => {
@@ -195,11 +202,20 @@ export function chapterCost(q: ComicQuality, count = 0): number {
 }
 
 /** The script instructions, asking for `panels` (min, max) pictures. */
-export const comicSystem = (panels: [number, number] = [4, 6]) =>
+export const comicSystem = (panels: [number, number] = [4, 6], webtoon = false) =>
   COMIC_SYSTEM.replace(
     '4 to 6 pictures',
     panels[0] === panels[1] ? `exactly ${panels[0]} pictures` : `${panels[0]} to ${panels[1]} pictures`,
-  );
+  ) + (webtoon ? WEBTOON_CAMERA : '');
+
+/** Extra camera direction for the modern webtoon look (tall frames, dynamic angles). */
+export const WEBTOON_CAMERA = `
+
+Style of this book: a modern Chinese manhua webtoon. Every picture is a TALL VERTICAL frame, composed top to bottom. Direct the camera boldly, like the best webtoons:
+- Action and fights: strong dutch angle (frame tilted 20-40 degrees), extreme low angle or high bird's-eye view, dramatic foreshortening with a fist, palm or sword thrust toward the camera, fighters clashing diagonally across the frame, glowing lightning, flames or qi as the main light source, speed lines and motion blur.
+- Emotion and revelations: extreme close-up of the face or eyes, soft gradient background, a single drop of sweat, a cold glance.
+- Calm dialogue and power: elegant medium or full-body shot from a slightly low angle, the character seated or standing proudly, robes and long hair flowing.
+Start every "scene" with this camera choice (e.g. "Dutch-angle low shot, vertical frame: ...").`;
 
 export const COMIC_SYSTEM = `You are an experienced Chinese wuxia/xianxia manhua artist and storyboard director. You have illustrated many cultivation novels and know how to turn a written chapter into a few striking, cinematic pictures that make the reader feel the moment: the tension of a confrontation, the weight of a revelation, the power of a technique.
 Your task: choose the moments of this chapter that get an illustration inside the text, like the pictures in an illustrated novel, and write for each one the picture description an image model (FLUX) will draw from.

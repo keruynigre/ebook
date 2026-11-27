@@ -21,6 +21,7 @@ const QUALITIES: { id: ComicQuality; label: string; note: string }[] = [
 
 export function CloudflareCard() {
   const settings = useSettings();
+  const webtoon = settings.comicLook === 'webtoon';
   const [token, setToken] = useState('');
   const [account, setAccount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -180,13 +181,26 @@ export function CloudflareCard() {
         </>
       )}
 
-      <View style={[ui.row, { justifyContent: 'space-between', marginTop: 6 }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={ui.text}>Renkli çiz</Text>
-          <Text style={ui.muted}>Kapalıysa siyah-beyaz. Değişiklik yeni çizilen karelerde görünür.</Text>
-        </View>
-        <Switch value={settings.comicColor} onValueChange={(v) => setSettings({ comicColor: v })} trackColor={{ true: colors.accent }} />
+      <Text style={[ui.text, { marginTop: 6 }]}>Çizim tarzı</Text>
+      <View style={ui.row}>
+        <Button small title="Klasik" variant={webtoon ? 'secondary' : 'primary'} onPress={() => setSettings({ comicLook: 'classic' })} style={{ flex: 1 }} />
+        <Button small title="Modern manhua" variant={webtoon ? 'primary' : 'secondary'} onPress={() => setSettings({ comicLook: 'webtoon' })} style={{ flex: 1 }} />
       </View>
+      <Text style={ui.muted}>
+        {webtoon
+          ? 'Renkli, dikey resimler; parlak dijital boyama, enerji efektleri, eğik ve aşağıdan/yukarıdan çarpıcı kamera açıları. Eski bölümler için resme basılı tutup “baştan seç” deyin.'
+          : 'Yatay resimler, sakin kamera. Renkli ya da siyah-beyaz.'}
+      </Text>
+
+      {!webtoon && (
+        <View style={[ui.row, { justifyContent: 'space-between', marginTop: 6 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={ui.text}>Renkli çiz</Text>
+            <Text style={ui.muted}>Kapalıysa siyah-beyaz. Değişiklik yeni çizilen karelerde görünür.</Text>
+          </View>
+          <Switch value={settings.comicColor} onValueChange={(v) => setSettings({ comicColor: v })} trackColor={{ true: colors.accent }} />
+        </View>
+      )}
 
       <Text style={[ui.text, { marginTop: 6 }]}>Çizim kalitesi</Text>
       <View style={ui.row}>

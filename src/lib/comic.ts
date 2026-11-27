@@ -23,6 +23,7 @@ import {
   mergeCast,
   panelPrompt,
   parseComicScript,
+  type ArtMode,
   type ComicCast,
   type ComicScript,
 } from './comicCore';
@@ -247,8 +248,8 @@ function encodeJpeg(width: number, height: number, data: Uint8Array): Uint8Array
 }
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';
-const cardFile = (bookId: string, name: string, color: boolean, styled: boolean) =>
-  new File(comicCardsDir(bookId, `${color ? 'color' : 'bw'}${styled ? `-s${getSettings().comicStyleVersion ?? 0}` : ''}`), `${slug(name)}.jpg`);
+const cardFile = (bookId: string, name: string, color: ArtMode, styled: boolean) =>
+  new File(comicCardsDir(bookId, `${color === 'webtoon' ? 'webtoon' : color ? 'color' : 'bw'}${styled ? `-s${getSettings().comicStyleVersion ?? 0}` : ''}`), `${slug(name)}.jpg`);
 
 /** The character's reference card, drawn once per book and drawing mode. Null if it could not be drawn. */
 async function ensureCard(
@@ -256,7 +257,7 @@ async function ensureCard(
   bookId: string,
   name: string,
   look: string,
-  color: boolean,
+  color: ArtMode,
   style: File | null,
 ): Promise<File | null> {
   const f = cardFile(bookId, name, color, !!style);
@@ -374,7 +375,7 @@ async function writeScript(bookId: string, index: number, update: (j: Partial<Co
     try {
       update({ message: 'Sahneler seçiliyor (Gemini)…' });
       const range = panelRange(settings.comicQuality ?? 'balanced', settings.comicCount ?? 0);
-      const data = await generateJson(key, choice.model, comicSystem(range), prompt, COMIC_SCHEMA, COMIC_HINT);
+      const data = await generateJson(key, choice.model, comicSystem(range, settings.comicLook === 'webtoon'), prompt, COMIC_SCHEMA, COMIC_HINT);
       const { script, cast: found } = parseComicScript(index, data, chapter.paragraphs.length);
       script.panels = script.panels.slice(0, range[1]);
       if (!script.panels.length) throw new GeminiError('Gemini sahne döndürmedi.', 'other');
@@ -399,7 +400,8 @@ async function drawChapter(bookId: string, index: number) {
   update({ message: 'Hazırlanıyor…', error: undefined });
   const script = (await loadComicScript(bookId, index)) ?? (await writeScript(bookId, index, update));
   const cast = await loadCast(bookId);
-  const color = !!settings.comicColor;
+  const webtoon = settings.comicLook === 'webtoon';
+  const color: ArtMode = webtoon ? 'webtoon' : !!settings.comicColor;
   const styleFile = settings.comicStyleRef && styleRefFile().exists ? styleRefFile() : null;
   const quality = COMIC_QUALITY[settings.comicQuality ?? 'balanced'];
   const total = script.panels.length;
@@ -431,7 +433,8 @@ async function drawChapter(bookId: string, index: number) {
           image = await drawer.withRefs(
             panelPrompt(panel, cast, color, { style: !!styleFile, cards: cards.map((c) => c.name) }),
             refs,
-            { width: quality.width, height: quality.height },
+            // Webtoon pictures are tall: the same size turned upright.
+            webtoon ? { width: quality.height, height: quality.width } : { width: quality.width, height: quality.height },
             seed,
           );
         } else {

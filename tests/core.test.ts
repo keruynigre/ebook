@@ -700,3 +700,12 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
   assert.deepEqual(aliasesFor(c, 'en', 9), ['Young Master Tian']);
   console.log('ok character cards');
 }
+
+// ---- webtoon look ------------------------------------------------------------------
+{
+  assert.ok(comicSystem([4, 6], true).includes('TALL VERTICAL'));
+  assert.ok(!comicSystem([4, 6]).includes('TALL VERTICAL'));
+  const pp = panelPrompt({ paragraph: 1, scene: 'Dutch-angle shot of Chu Yang.', characters: [], bubbles: [] } as any, {}, 'webtoon');
+  assert.ok(pp.includes('webtoon') && pp.includes('Chu Yang'));
+  console.log('ok webtoon');
+}

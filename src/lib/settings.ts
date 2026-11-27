@@ -50,6 +50,8 @@ export interface ReaderSettings {
   localImageKey: string;
   /** Comic panels in colour instead of black and white. */
   comicColor: boolean;
+  /** 'webtoon': modern colour manhua, tall pictures and dynamic camera angles. */
+  comicLook: 'classic' | 'webtoon';
   /** Show pictures of the key moments inside the text (drawn with Cloudflare). */
   illustrate: boolean;
   /** Panel size and number of references: smaller costs fewer Cloudflare neurons. */
@@ -93,6 +95,7 @@ const DEFAULTS: ReaderSettings = {
   localImageUrl: '',
   localImageKey: '',
   comicColor: false,
+  comicLook: 'classic',
   illustrate: false,
   comicQuality: 'balanced',
   comicCount: 0,
