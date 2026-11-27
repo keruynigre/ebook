@@ -4,7 +4,7 @@
  * Cloudflare FLUX draws them. Everything is saved under the book so a
  * chapter is drawn only once. One chapter is drawn at a time.
  */
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as jpeg from 'jpeg-js';
 import { useSyncExternalStore } from 'react';
@@ -28,12 +28,12 @@ import {
   type ComicScript,
 } from './comicCore';
 import { GeminiError, generateJson } from './gemini';
-import { getBook } from './library';
+import { allBooks, getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
 import { loadNotebook } from './notebook';
 import { getCfToken, getGeminiKey, getSettings, setSettings } from './settings';
-import { comicCardsDir, comicCastFile, comicDir, loadChapter } from './storage';
+import { bookDir, comicCardsDir, comicCastFile, comicDir, loadChapter } from './storage';
 
 /** Where pictures are drawn: Cloudflare, or the person's own computer (Unsloth). */
 export interface Drawer {
@@ -271,6 +271,23 @@ async function ensureCard(
     if (e instanceof CloudflareError && (e.kind === 'daily' || e.kind === 'auth')) throw e;
     return null;
   }
+}
+
+/**
+ * Forget every book's character reference cards; they are drawn again (with the current
+ * style and description) the next time a picture needs them. Returns how many were deleted.
+ */
+export function resetCharacterCards(): number {
+  let n = 0;
+  for (const b of allBooks()) {
+    const dir = new Directory(bookDir(b.id), 'comic', 'cards');
+    if (!dir.exists) continue;
+    const count = (d: Directory): number => d.list().reduce((k, x) => k + (x instanceof Directory ? count(x) : 1), 0);
+    n += count(dir);
+    dir.delete();
+  }
+  emit();
+  return n;
 }
 
 /** Delete one panel picture so it is drawn again. */

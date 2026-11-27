@@ -40,6 +40,11 @@ export function useBook(id: string): Book | undefined {
   return all.find((b) => b.id === id);
 }
 
+/** Every book in the library (as loaded). */
+export function allBooks(): Book[] {
+  return books;
+}
+
 export function getBook(id: string): Book | undefined {
   return books.find((b) => b.id === id);
 }

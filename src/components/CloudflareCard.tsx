@@ -4,7 +4,7 @@ import { Alert, Linking, Pressable, Switch, Text, TextInput, View } from 'react-
 
 import { listAccounts } from '../lib/cloudflare';
 import { normalizeBase, testLocal } from '../lib/localImage';
-import { chooseStyleImage, clearStyleImage, MAX_STYLE, removeStyleImage, styleParts } from '../lib/comic';
+import { chooseStyleImage, clearStyleImage, MAX_STYLE, removeStyleImage, resetCharacterCards, styleParts } from '../lib/comic';
 import { chapterCost, COMIC_COUNTS, panelRange, type ComicQuality } from '../lib/comicCore';
 import { setCfToken, setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
@@ -267,6 +267,28 @@ export function CloudflareCard() {
         )}
         {parts.length > 1 && <Button title="Tümünü kaldır" variant="danger" onPress={clearStyleImage} />}
       </View>
+
+      <Text style={[ui.text, { marginTop: 6 }]}>Karakter kartları</Text>
+      <Text style={ui.muted}>
+        Her karakter için bir kez çizilen ve her resimde örnek olarak kullanılan portreler. Tarzı değiştirdiysen ya da yüzler
+        beğenmediğin gibi çıktıysa yeniden çizdir; kartlar bir sonraki resimde yeni tarzla çizilir.
+      </Text>
+      <Button
+        title="Karakter kartlarını yeniden çiz"
+        variant="secondary"
+        onPress={() =>
+          Alert.alert('Karakter kartları yeniden çizilsin mi?', 'Bütün kitaplardaki kartlar silinir; gerektikçe yeni tarzla baştan çizilir. Önceki resimler değişmez.', [
+            { text: 'Vazgeç', style: 'cancel' },
+            {
+              text: 'Yeniden çiz',
+              onPress: () => {
+                const n = resetCharacterCards();
+                Alert.alert('Tamam', n ? `${n} kart silindi. Yeni resimlerde baştan çizilecek.` : 'Silinecek kart yoktu.');
+              },
+            },
+          ])
+        }
+      />
     </Card>
   );
 }
