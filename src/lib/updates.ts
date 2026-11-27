@@ -3,6 +3,7 @@
  * hands: the APK opens in the browser to download, then Android asks to install.
  */
 import Constants from 'expo-constants';
+import { Directory, File, Paths } from 'expo-file-system';
 import { useSyncExternalStore } from 'react';
 
 import { getSettings } from './settings';
@@ -91,4 +92,77 @@ export function checkOnStart() {
   if (getSettings().checkUpdates === false) return;
   if (Date.now() - state.checkedAt < 3 * 60 * 60 * 1000) return;
   checkForUpdate().catch(() => undefined);
+}
+
+// ---- in-app download and install: no browser in between ----
+
+export type InstallState =
+  | { phase: 'idle' }
+  | { phase: 'downloading'; version: string; got: number; total: number }
+  | { phase: 'ready'; version: string }
+  | { phase: 'error'; version: string; message: string };
+
+let install: InstallState = { phase: 'idle' };
+const installListeners = new Set<() => void>();
+function setInstall(s: InstallState) {
+  install = s;
+  for (const l of installListeners) l();
+}
+
+export function useInstall() {
+  return useSyncExternalStore(
+    (l) => {
+      installListeners.add(l);
+      return () => installListeners.delete(l);
+    },
+    () => install,
+  );
+}
+
+const APK_MIME = 'application/vnd.android.package-archive';
+
+/** Hand the downloaded APK to Android's installer ("Güncelle" screen). */
+async function openInstaller(file: File) {
+  await File.preview(file, { mimeType: APK_MIME });
+}
+
+/**
+ * Downloads the new APK into the app's cache, then opens Android's installer.
+ * The first time, Android asks to allow "Ebook" to install apps; after allowing,
+ * pressing "Kur" again opens the installer.
+ */
+export async function downloadAndInstall(u: UpdateInfo): Promise<void> {
+  if (install.phase === 'downloading') return;
+  const dir = new Directory(Paths.cache, 'update');
+  const file = new File(dir, `ebook-${u.version}.apk`);
+  try {
+    // Already downloaded in full earlier: just open the installer again.
+    const doneMark = new File(dir, `ebook-${u.version}.done`);
+    if (file.exists && doneMark.exists) {
+      setInstall({ phase: 'ready', version: u.version });
+      await openInstaller(file);
+      return;
+    }
+    if (dir.exists) dir.delete(); // old versions and half-finished downloads
+    dir.create({ intermediates: true });
+    setInstall({ phase: 'downloading', version: u.version, got: 0, total: 0 });
+    let lastTick = 0;
+    await File.downloadFileAsync(u.apkUrl, file, {
+      idempotent: true,
+      onProgress: ({ bytesWritten, totalBytes }) => {
+        const now = Date.now();
+        if (now - lastTick < 250) return;
+        lastTick = now;
+        setInstall({ phase: 'downloading', version: u.version, got: bytesWritten, total: totalBytes });
+      },
+    });
+    if (!file.exists || file.size < 1_000_000) throw new Error('İndirilen dosya eksik.');
+    doneMark.create();
+    setInstall({ phase: 'ready', version: u.version });
+    await openInstaller(file);
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    setInstall({ phase: 'error', version: u.version, message: msg });
+    throw e;
+  }
 }

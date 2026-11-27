@@ -2,7 +2,7 @@ import { Image, Linking, Pressable, Switch, Text, View } from 'react-native';
 
 import { setSettings, useSettings } from '../lib/settings';
 import { colors } from '../lib/theme';
-import { appVersion, checkForUpdate, RELEASES_PAGE, useUpdate, type UpdateInfo } from '../lib/updates';
+import { appVersion, checkForUpdate, downloadAndInstall, RELEASES_PAGE, useInstall, useUpdate, type UpdateInfo } from '../lib/updates';
 import { APP_ICON } from './icons';
 import { Button, Card, ui } from './ui';
 
@@ -17,6 +17,40 @@ function UpdateText({ u }: { u: UpdateInfo }) {
   );
 }
 
+const mb = (n: number) => (n / 1048576).toFixed(1).replace('.', ',');
+
+/** Downloads the APK inside the app and opens Android's installer; shows progress and errors. */
+function InstallButton({ u, style }: { u: UpdateInfo; style?: object }) {
+  const st = useInstall();
+  const mine = st.phase !== 'idle' && st.version === u.version;
+  const busy = mine && st.phase === 'downloading';
+  const title = busy
+    ? st.total > 0
+      ? `İndiriliyor… ${Math.round((st.got / st.total) * 100)}% (${mb(st.got)} / ${mb(st.total)} MB)`
+      : 'İndiriliyor…'
+    : mine && st.phase === 'ready'
+      ? 'Kur'
+      : 'İndir ve kur';
+  return (
+    <View style={[{ gap: 6 }, style]}>
+      <Button title={title} disabled={busy} onPress={() => downloadAndInstall(u).catch(() => undefined)} />
+      {mine && st.phase === 'ready' && (
+        <Text style={ui.muted}>
+          Kurulum ekranı açılmadıysa ya da Android “bilinmeyen uygulamalar” iznini sorduysa, izni verip “Kur”a yeniden basın.
+        </Text>
+      )}
+      {mine && st.phase === 'error' && (
+        <>
+          <Text style={ui.error}>İndirilemedi: {st.message}</Text>
+          <Pressable onPress={() => Linking.openURL(u.apkUrl)}>
+            <Text style={{ color: colors.accent, fontWeight: '700' }}>Tarayıcıyla indir ↗</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
+  );
+}
+
 /** Banner on the library screen when a newer version is out (and not skipped). */
 export function UpdateBanner() {
   const { update } = useUpdate();
@@ -25,9 +59,9 @@ export function UpdateBanner() {
   return (
     <Card style={{ gap: 8, borderColor: colors.accent, borderWidth: 1 }}>
       <UpdateText u={update} />
-      <Text style={ui.muted}>“İndir”e basınca APK tarayıcıda iner; inince dokunup “Güncelle” deyin. Kitaplarınız silinmez.</Text>
-      <View style={ui.row}>
-        <Button title="İndir" onPress={() => Linking.openURL(update.apkUrl)} style={{ flex: 1 }} />
+      <Text style={ui.muted}>Uygulama yeni sürümü kendisi indirir, sonra Android “Güncelle” der. Kitaplarınız silinmez.</Text>
+      <View style={[ui.row, { alignItems: 'flex-start' }]}>
+        <InstallButton u={update} style={{ flex: 1 }} />
         <Button title="Sonra" variant="secondary" onPress={() => setSettings({ skippedUpdate: update.version })} />
       </View>
     </Card>
@@ -54,7 +88,7 @@ export function UpdateCard() {
       {update ? (
         <>
           <UpdateText u={update} />
-          <Button title="Yeni sürümü indir" onPress={() => Linking.openURL(update.apkUrl)} />
+          <InstallButton u={update} />
         </>
       ) : (
         checkedAt > 0 && !error && !checking && <Text style={ui.muted}>En son sürümü kullanıyorsunuz.</Text>

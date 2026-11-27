@@ -3,7 +3,7 @@
     "name": "Ebook",
     "slug": "ebook",
     "scheme": "ebook",
-    "version": "1.0.27",
+    "version": "1.0.28",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -21,7 +21,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.REQUEST_INSTALL_PACKAGES"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
