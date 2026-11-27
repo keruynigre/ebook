@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { listAccounts } from '../lib/cloudflare';
+import { normalizeBase, testLocal } from '../lib/localImage';
 import { chooseStyleImage, clearStyleImage, MAX_STYLE, removeStyleImage, styleParts } from '../lib/comic';
 import { chapterCost, COMIC_COUNTS, panelRange, type ComicQuality } from '../lib/comicCore';
 import { setCfToken, setSettings, useSettings } from '../lib/settings';
@@ -26,6 +27,25 @@ export function CloudflareCard() {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [styleBusy, setStyleBusy] = useState(false);
+  const [url, setUrl] = useState(settings.localImageUrl ?? '');
+  const [key, setKey] = useState(settings.localImageKey ?? '');
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const local = settings.imageSource === 'local';
+  const saveLocal = async () => {
+    const base = normalizeBase(url);
+    setUrl(base);
+    setSettings({ localImageUrl: base, localImageKey: key.trim() });
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      setTestMsg({ ok: true, text: await testLocal(base, key.trim()) });
+    } catch (e) {
+      setTestMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setTesting(false);
+    }
+  };
   // Re-read the files whenever the style changes (the version is bumped on every change).
   const parts = useMemo(() => styleParts(), [settings.comicStyleVersion, settings.comicStyleRef]); // eslint-disable-line react-hooks/exhaustive-deps
   const run = async (fn: () => Promise<unknown>) => {
@@ -73,12 +93,50 @@ export function CloudflareCard() {
 
   return (
     <Card style={{ gap: 10 }}>
-      <Text style={ui.h2}>Resimli okuma (Cloudflare)</Text>
+      <Text style={ui.h2}>Resimli okuma</Text>
       <Text style={ui.muted}>
         Okuyucudaki resim düğmesi açıkken bölümün önemli anlarına (özellikle ana karakterin ve önemli karakterlerin
-        konuşmalarına) yazının içinde resim eklenir: Gemini anları seçer, Cloudflare’ın FLUX modeli çizer. Resme basılı
-        tutarak yeniden çizdirebilirsin. Ücretsiz hesapta günlük çizim hakkı sınırlıdır.
+        konuşmalarına) yazının içinde resim eklenir: Gemini anları seçer, FLUX modeli çizer. Resme basılı tutarak
+        yeniden çizdirebilirsin.
       </Text>
+      <Text style={[ui.text, { marginTop: 4 }]}>Resimleri kim çizsin?</Text>
+      <View style={ui.row}>
+        <Button small title="Cloudflare" variant={local ? 'secondary' : 'primary'} onPress={() => setSettings({ imageSource: 'cloudflare' })} style={{ flex: 1 }} />
+        <Button small title="Bilgisayarım" variant={local ? 'primary' : 'secondary'} onPress={() => setSettings({ imageSource: 'local' })} style={{ flex: 1 }} />
+      </View>
+      {local ? (
+        <View style={{ gap: 8 }}>
+          <Text style={ui.muted}>
+            Bilgisayardaki Unsloth çizer; sınır yok, yalnızca bilgisayar açık ve telefon aynı Wi-Fi’da olmalı.{'\n'}1. Unsloth →
+            Ayarlar → Uzak ve LAN: ağdan erişimi açın, orada yazan adresi (ör. http://192.168.1.20:8888) buraya yazın.{'\n'}2.
+            Ayarlar → API: bir anahtar oluşturup yapıştırın (anahtarsız erişimi açtıysanız boş bırakın).{'\n'}3. Ayarlar → API:
+            “Görüntü ve video modelini isteğe göre değiştir”i açın ya da Görseller sayfasında FLUX.2 klein modelini yükleyin.
+          </Text>
+          <TextInput
+            value={url}
+            onChangeText={setUrl}
+            placeholder="http://192.168.1.20:8888"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            style={ui.input}
+          />
+          <TextInput
+            value={key}
+            onChangeText={setKey}
+            placeholder="Unsloth API anahtarı (sk-unsloth-…), anahtarsızsa boş"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            style={ui.input}
+          />
+          <Button title="Kaydet ve bağlantıyı dene" onPress={saveLocal} busy={testing} disabled={!url.trim()} />
+          {testMsg && <Text style={testMsg.ok ? ui.muted : ui.error}>{testMsg.ok ? `✓ ${testMsg.text}` : testMsg.text}</Text>}
+        </View>
+      ) : (
+        <>
       <Text style={ui.text}>
         {settings.hasCfToken && settings.cfAccountId ? '✓ Cloudflare anahtarı kayıtlı.' : 'Henüz Cloudflare anahtarı yok.'}
       </Text>
@@ -119,6 +177,8 @@ export function CloudflareCard() {
       </View>
       {!!error && <Text style={ui.error}>{error}</Text>}
       {!!note && <Text style={ui.muted}>{note}</Text>}
+        </>
+      )}
 
       <View style={[ui.row, { justifyContent: 'space-between', marginTop: 6 }]}>
         <View style={{ flex: 1 }}>
@@ -159,9 +219,10 @@ export function CloudflareCard() {
         {(settings.comicCount ?? 0) === 0
           ? `Otomatik: kaliteye göre ${panelRange(settings.comicQuality).join('-')} resim.`
           : `Her bölüme ${settings.comicCount} resim.`}{' '}
-        Ücretsiz günlük hakla yaklaşık {Math.floor(10_000 / chapterCost(settings.comicQuality, settings.comicCount ?? 0))} bölüm
-        çizilir (yeni karakterlerin kartları da biraz harcar). Önceden resimleri seçilmiş bölümler değişmez; resme basılı
-        tutup “Bölümün resimlerini baştan seç” diyebilirsin.
+        {local
+          ? 'Bilgisayarda çizim hakkı sınırı yok; ancak her resim bilgisayarın hızına göre biraz sürer.'
+          : `Ücretsiz günlük hakla yaklaşık ${Math.floor(10_000 / chapterCost(settings.comicQuality, settings.comicCount ?? 0))} bölüm çizilir (yeni karakterlerin kartları da biraz harcar).`}{' '}
+        Önceden resimleri seçilmiş bölümler değişmez; resme basılı tutup “Bölümün resimlerini baştan seç” diyebilirsin.
       </Text>
 
       <Text style={[ui.text, { marginTop: 6 }]}>Tarz görselleri</Text>

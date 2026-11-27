@@ -189,7 +189,9 @@ export default function Reader() {
   }, [id, i, settings.translateOnOpen, settings.showTranslation, settings.hasGeminiKey]);
 
   // Pictures of the key moments, inside the text (setting "illustrate", 🖼 in the top bar).
-  const drawReady = settings.hasCfToken && !!settings.cfAccountId && settings.hasGeminiKey;
+  const drawReady =
+    settings.hasGeminiKey &&
+    (settings.imageSource === 'local' ? !!settings.localImageUrl?.trim() : settings.hasCfToken && !!settings.cfAccountId);
   const illustrate = settings.illustrate && drawReady;
   const comicJob = useComicJob(id, i);
   const comicV = useComicVersion();
@@ -219,7 +221,7 @@ export default function Reader() {
   }, [illustrate, comicJob, id, i]);
   const toggleIllustrate = () => {
     if (!drawReady) {
-      Alert.alert('Resimler için anahtar gerekli', 'Bölümün önemli anlarına resim eklemek için Ayarlar’dan Cloudflare ve Gemini anahtarlarını girin.', [
+      Alert.alert('Resimler için anahtar gerekli', 'Bölümün önemli anlarına resim eklemek için Ayarlar’dan Gemini anahtarını ve çizim kaynağını (Cloudflare ya da bilgisayarın) girin.', [
         { text: 'Vazgeç', style: 'cancel' },
         { text: 'Ayarlara git', onPress: () => router.push('/settings') },
       ]);

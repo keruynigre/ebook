@@ -10,6 +10,7 @@ import * as jpeg from 'jpeg-js';
 import { useSyncExternalStore } from 'react';
 
 import { CloudflareError, drawImage, drawWithRefs } from './cloudflare';
+import { drawLocal } from './localImage';
 import {
   COMIC_HINT,
   COMIC_SCHEMA,
@@ -32,6 +33,35 @@ import { refreshModelList } from './models';
 import { loadNotebook } from './notebook';
 import { getCfToken, getGeminiKey, getSettings, setSettings } from './settings';
 import { comicCardsDir, comicCastFile, comicDir, loadChapter } from './storage';
+
+/** Where pictures are drawn: Cloudflare, or the person's own computer (Unsloth). */
+interface Drawer {
+  local: boolean;
+  withRefs(prompt: string, refs: string[], size: { width: number; height: number }, seed?: number): Promise<string>;
+  plain(prompt: string, seed?: number): Promise<string>;
+}
+
+async function getDrawer(): Promise<Drawer> {
+  const settings = getSettings();
+  if (settings.imageSource === 'local') {
+    const url = settings.localImageUrl ?? '';
+    if (!url.trim()) throw new Error('Önce Ayarlar’dan bilgisayarın adresini girin.');
+    const key = settings.localImageKey ?? '';
+    return {
+      local: true,
+      withRefs: (prompt, refs, size, seed) => drawLocal(url, key, prompt, refs, size, seed),
+      plain: (prompt, seed) => drawLocal(url, key, prompt, [], { width: 1024, height: 768 }, seed),
+    };
+  }
+  const token = await getCfToken();
+  const account = settings.cfAccountId;
+  if (!token || !account) throw new Error('Önce Ayarlar’dan Cloudflare anahtarını girin.');
+  return {
+    local: false,
+    withRefs: (prompt, refs, size, seed) => drawWithRefs(token, account, prompt, refs, size, seed),
+    plain: (prompt, seed) => drawImage(token, account, prompt, seed),
+  };
+}
 
 export type { ComicScript } from './comicCore';
 
@@ -222,8 +252,7 @@ const cardFile = (bookId: string, name: string, color: boolean, styled: boolean)
 
 /** The character's reference card, drawn once per book and drawing mode. Null if it could not be drawn. */
 async function ensureCard(
-  token: string,
-  accountId: string,
+  drawer: Drawer,
   bookId: string,
   name: string,
   look: string,
@@ -233,7 +262,7 @@ async function ensureCard(
   const f = cardFile(bookId, name, color, !!style);
   if (f.exists) return f;
   try {
-    const image = await drawWithRefs(token, accountId, cardPrompt(name, look, color, !!style), style ? [style.uri] : [], { width: REF_SIDE, height: REF_SIDE }, 7);
+    const image = await drawer.withRefs(cardPrompt(name, look, color, !!style), style ? [style.uri] : [], { width: REF_SIDE, height: REF_SIDE }, 7);
     await f.write(image, { encoding: 'base64' });
     return f;
   } catch (e) {
@@ -366,8 +395,7 @@ async function drawChapter(bookId: string, index: number) {
   const k = jobKey(bookId, index);
   const update = (j: Partial<ComicJob>) => setJob(bookId, index, { ...(jobs.get(k) ?? { running: true, done: 0, total: 0, message: '' }), running: true, ...j });
   const settings = getSettings();
-  const token = await getCfToken();
-  if (!token || !settings.cfAccountId) throw new Error('Önce Ayarlar’dan Cloudflare anahtarını girin.');
+  const drawer = await getDrawer();
   update({ message: 'Hazırlanıyor…', error: undefined });
   const script = (await loadComicScript(bookId, index)) ?? (await writeScript(bookId, index, update));
   const cast = await loadCast(bookId);
@@ -395,14 +423,12 @@ async function drawChapter(bookId: string, index: number) {
           const cards: { name: string; file: File }[] = [];
           for (const n of names) {
             update({ message: `${n} için karakter kartı hazırlanıyor…` });
-            const card = await ensureCard(token, settings.cfAccountId, bookId, n, cast[n], color, styleFile);
+            const card = await ensureCard(drawer, bookId, n, cast[n], color, styleFile);
             if (card) cards.push({ name: n, file: card });
           }
           update({ message: `${p + 1}. kare çiziliyor…` });
           const refs = [...(styleFile ? [styleFile.uri] : []), ...cards.map((c) => c.file.uri)];
-          image = await drawWithRefs(
-            token,
-            settings.cfAccountId,
+          image = await drawer.withRefs(
             panelPrompt(panel, cast, color, { style: !!styleFile, cards: cards.map((c) => c.name) }),
             refs,
             { width: quality.width, height: quality.height },
@@ -410,7 +436,7 @@ async function drawChapter(bookId: string, index: number) {
           );
         } else {
           // Last resort: the older text-only model.
-          image = await drawImage(token, settings.cfAccountId, panelPrompt(panel, cast, color), seed);
+          image = await drawer.plain(panelPrompt(panel, cast, color), seed);
         }
         await panelFile(bookId, index, p).write(image, { encoding: 'base64' });
         break;

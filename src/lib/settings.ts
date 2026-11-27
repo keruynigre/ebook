@@ -42,6 +42,12 @@ export interface ReaderSettings {
   /** Cloudflare account for drawing comic panels (Workers AI); the token lives in secure storage. */
   cfAccountId: string;
   hasCfToken: boolean;
+  /** Draw with Cloudflare or on the person's own computer (Unsloth on the same Wi-Fi). */
+  imageSource: 'cloudflare' | 'local';
+  /** Address of the computer, e.g. http://192.168.1.20:8888. */
+  localImageUrl: string;
+  /** Unsloth API key (empty when keyless access is on). Only works on the home network. */
+  localImageKey: string;
   /** Comic panels in colour instead of black and white. */
   comicColor: boolean;
   /** Show pictures of the key moments inside the text (drawn with Cloudflare). */
@@ -83,6 +89,9 @@ const DEFAULTS: ReaderSettings = {
   skippedUpdate: '',
   cfAccountId: '',
   hasCfToken: false,
+  imageSource: 'cloudflare',
+  localImageUrl: '',
+  localImageKey: '',
   comicColor: false,
   illustrate: false,
   comicQuality: 'balanced',
