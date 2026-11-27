@@ -160,7 +160,9 @@ export function panelPrompt(panel: ComicPanel, cast: ComicCast, color: ArtMode =
     })
     .filter(Boolean);
   const ref = refText(refs);
-  if (color === 'webtoon') return [ref, STYLE, panel.scene].filter(Boolean).join(', ').slice(0, MAX_PROMPT);
+  // Modern manhua draws without portrait cards, so the looks go in as text; otherwise the model invents generic people.
+  if (color === 'webtoon')
+    return [ref, STYLE, panel.scene, people.length ? `characters: ${people.slice(0, 3).join('; ')}` : ''].filter(Boolean).join(', ').slice(0, MAX_PROMPT);
   const parts = [ref, STYLE, panel.scene, people.length ? `Characters: ${people.join('; ')}` : '', NO_TEXT].filter(Boolean);
   let prompt = parts.join('. ');
   if (prompt.length > MAX_PROMPT) {
@@ -216,6 +218,7 @@ STYLE OF THIS BOOK: modern Chinese manhua / Korean webtoon, drawn by a lightweig
 "scene" is NOT a paragraph: write 18 to 26 short comma-separated visual chunks, in this order:
 [camera & framing], [environment & lighting], [character lock & pose], [facial expression], [single dominant effect]
 Do not add the art style; it is added automatically.
+0. Faithfulness (MOST IMPORTANT, above every other rule): the picture shows exactly what happens in its paragraph and the lines around it. Only the people actually present there, doing what the text says, in the relation the text gives (a leader questioning a group of elders, an old man shaking his head, two armies facing each other). Count them: if the text speaks of a group, show a group. Never add a romantic couple, an embrace, a hand on a shoulder or a tender look unless the text says so. If the picture alone would not let a reader guess the moment, rewrite it.
 1. Camera & framing, pick ONE:
 - authority / dominance / menace: "low-angle shot, imposing silhouette, dramatic shadow"
 - shock / fear / betrayal: "extreme close-up on eyes, constricted pupils, sweat drop, tense brow"
@@ -235,7 +238,8 @@ Do not add the art style; it is added automatically.
 4. Variety (IMPORTANT, the pictures of a chapter must not look alike):
 - never the same framing twice in a row; at least half of the pictures are wide or medium shots where the place is clearly visible (hall, courtyard, cliff, sky, crowd, sect gate)
 - characters are seen from the side, three-quarter view, from behind, from above or below, not standing centered facing the viewer
-- not every picture shows a fighting stance or a shouting face: use calm, sitting, walking, looking away, two people facing each other, a close-up of a hand, sword or eyes
+- not every picture shows a fighting stance or a shouting face: calm scenes may be sitting, walking, a council, a crowd, a close-up of a hand, sword or eyes, but only when the text has that moment
+- variety never overrides faithfulness: change the camera, not what happens
 - the effect is optional; calm scenes have none
 5. Safeguards: no sentences or clauses, no words like 8k, hyper-detailed, masterpiece, photorealistic. One main action and one main effect per picture; at most 2 characters in focus, everyone else as "blurred onlookers in background".`;
 
@@ -249,7 +253,7 @@ The chapter is given as numbered paragraphs ("[12] ..."). Return JSON with:
     2. Then the other characters and how they relate in space (in front of, behind, kneeling before, facing across the courtyard).
     3. Then the setting and atmosphere: place, time of day, weather, light source and mood lighting (candlelight, moonlight through mist, the glow of spiritual energy, sword light, flames).
     Choose the shot like a director: close-up for emotion and revelations, medium shot for dialogue, wide or low-angle shot for power, fights and huge scenery, over-the-shoulder for confrontations. Use concrete, visible details only; no abstract words ("a powerful feeling", "destiny"), no sounds, no thoughts, no names of techniques without saying what they look like. Do not describe the looks of named characters here beyond injuries and clothing changes (their fixed looks are added separately); never ask for written text.
-  - "characters": names of the named characters visible in the picture (max 3), exactly as in the cast.
+  - "characters": names of the named characters visible in the picture (max 3), exactly as in the cast. Only characters who are really present at that paragraph; do not add the main character or anyone else just because they are important.
 - "cast": for every named character in "panels" who is NOT in the known cast: {"name", "look"} where "look" is a fixed English visual description (gender, age, build, face, hairstyle, eyes, typical clothing, notable items), 25-45 words, based on the novel and the notes given, written so an artist could draw the same person every time. Do not repeat characters already in the known cast.
 Use the same spelling of names everywhere. Answer only with the JSON.`;
 

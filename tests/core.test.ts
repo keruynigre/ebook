@@ -707,5 +707,8 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
   assert.ok(!comicSystem([4, 6]).includes('18 to 26'));
   const pp = panelPrompt({ paragraph: 1, scene: 'Dutch-angle shot of Chu Yang.', characters: [], bubbles: [] } as any, {}, 'webtoon');
   assert.ok(pp.startsWith('modern Chinese donghua') && pp.includes('Chu Yang'));
+  const pp2 = panelPrompt({ paragraph: 1, scene: 'wide shot of a hall', characters: ['Chu Yang'], bubbles: [] } as any, { 'Chu Yang': 'young man, long black hair' }, 'webtoon');
+  assert.ok(pp2.includes('Chu Yang: young man, long black hair'));
+  assert.ok(comicSystem([4, 6], true).includes('Faithfulness'));
   console.log('ok webtoon');
 }
