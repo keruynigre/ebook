@@ -248,8 +248,9 @@ function encodeJpeg(width: number, height: number, data: Uint8Array): Uint8Array
 }
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';
+// 'webtoon2': cards of the short-chunk webtoon style (1.0.36); older webtoon cards are drawn again.
 const cardFile = (bookId: string, name: string, color: ArtMode, styled: boolean) =>
-  new File(comicCardsDir(bookId, `${color === 'webtoon' ? 'webtoon' : color ? 'color' : 'bw'}${styled ? `-s${getSettings().comicStyleVersion ?? 0}` : ''}`), `${slug(name)}.jpg`);
+  new File(comicCardsDir(bookId, `${color === 'webtoon' ? 'webtoon2' : color ? 'color' : 'bw'}${styled ? `-s${getSettings().comicStyleVersion ?? 0}` : ''}`), `${slug(name)}.jpg`);
 
 /** The character's reference card, drawn once per book and drawing mode. Null if it could not be drawn. */
 async function ensureCard(
