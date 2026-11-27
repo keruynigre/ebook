@@ -1,11 +1,13 @@
 import { Image } from 'expo-image';
 import { Link, Stack, router } from 'expo-router';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ICONS } from '../components/icons';
 import { Button, Card, IconButton, ui } from '../components/ui';
 import { UpdateBanner } from '../components/UpdateCard';
+import { ensureCovers, useCoverJob } from '../lib/coverArt';
 import { useLibrary } from '../lib/library';
 import { bookSize, coverFile, formatSize } from '../lib/storage';
 import { colors } from '../lib/theme';
@@ -13,6 +15,7 @@ import type { Book } from '../lib/types';
 
 function BookRow({ book }: { book: Book }) {
   const cover = coverFile(book);
+  const coverJob = useCoverJob(book.id);
   const size = bookSize(book.id, `${book.updatedAt}:${book.downloaded.length}:${book.translated?.length ?? 0}`);
   return (
     <Link href={{ pathname: '/book/[id]', params: { id: book.id } }} asChild>
@@ -21,7 +24,14 @@ function BookRow({ book }: { book: Book }) {
           <Image source={{ uri: cover.uri }} style={styles.cover} contentFit="cover" />
         ) : (
           <View style={[styles.cover, styles.coverEmpty]}>
-            <Text style={{ color: colors.muted, fontSize: 22 }}>📖</Text>
+            {coverJob?.running ? (
+              <>
+                <ActivityIndicator color={colors.accent} />
+                <Text style={{ color: colors.muted, fontSize: 10, marginTop: 4, textAlign: 'center' }}>Kapak çiziliyor</Text>
+              </>
+            ) : (
+              <Text style={{ color: colors.muted, fontSize: 22 }}>📖</Text>
+            )}
           </View>
         )}
         <View style={{ flex: 1 }}>
@@ -46,6 +56,9 @@ function BookRow({ book }: { book: Book }) {
 
 export default function Library() {
   const { books, loaded } = useLibrary();
+  useEffect(() => {
+    if (loaded) ensureCovers(books).catch(() => undefined);
+  }, [books, loaded]);
   const insets = useSafeAreaInsets();
   return (
     <View style={ui.screen}>

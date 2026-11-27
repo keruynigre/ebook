@@ -16,7 +16,7 @@ function booksRoot(): Directory {
   return dir;
 }
 
-function bookDir(id: string): Directory {
+export function bookDir(id: string): Directory {
   return new Directory(booksRoot(), id);
 }
 

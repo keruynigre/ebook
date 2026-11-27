@@ -35,13 +35,13 @@ import { getCfToken, getGeminiKey, getSettings, setSettings } from './settings';
 import { comicCardsDir, comicCastFile, comicDir, loadChapter } from './storage';
 
 /** Where pictures are drawn: Cloudflare, or the person's own computer (Unsloth). */
-interface Drawer {
+export interface Drawer {
   local: boolean;
   withRefs(prompt: string, refs: string[], size: { width: number; height: number }, seed?: number): Promise<string>;
   plain(prompt: string, seed?: number): Promise<string>;
 }
 
-async function getDrawer(): Promise<Drawer> {
+export async function getDrawer(): Promise<Drawer> {
   const settings = getSettings();
   if (settings.imageSource === 'local') {
     const url = settings.localImageUrl ?? '';

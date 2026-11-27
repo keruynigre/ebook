@@ -107,14 +107,19 @@ export async function addOrUpdateBook(info: NovelInfo): Promise<Book> {
     chapters: info.chapters,
     downloaded: remapDownloaded(existing, info),
     coverFile: existing?.coverFile,
+    coverAi: existing?.coverAi,
     addedAt: existing?.addedAt ?? now,
     updatedAt: now,
   };
-  if (!book.coverFile && info.coverUrl) {
+  // A real cover from the site replaces one drawn by AI.
+  if ((!book.coverFile || book.coverAi) && info.coverUrl) {
     try {
       const bytes = await http.getBytes(info.coverUrl);
       const type = detectImageType(bytes);
-      if (type) book.coverFile = await storage.saveCover(id, bytes, type.ext);
+      if (type) {
+        book.coverFile = await storage.saveCover(id, bytes, type.ext);
+        book.coverAi = undefined;
+      }
     } catch {
       // A missing cover is not worth failing over.
     }

@@ -49,6 +49,8 @@ export interface Book {
   readStatsBackfilled?: boolean;
   /** File name of the cover inside the book folder, if any. */
   coverFile?: string;
+  /** The cover was drawn by AI (no cover came with the book). */
+  coverAi?: boolean;
   addedAt: number;
   updatedAt: number;
 }

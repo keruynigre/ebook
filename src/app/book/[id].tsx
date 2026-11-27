@@ -1,12 +1,13 @@
 import { Image } from 'expo-image';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChapterSheet } from '../../components/ChapterSheet';
 import { ICONS } from '../../components/icons';
 import { Button, Card, IconTile, ProgressBar, ui } from '../../components/ui';
+import { drawBookCover, useCoverJob } from '../../lib/coverArt';
 import { cancelDownload, startDownload, useDownload } from '../../lib/downloads';
 import { refreshChapterList, removeBook, useBook } from '../../lib/library';
 import { useSettings } from '../../lib/settings';
@@ -16,6 +17,7 @@ import { colors } from '../../lib/theme';
 export default function BookScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const book = useBook(id);
+  const coverJob = useCoverJob(id);
   const download = useDownload(id);
   const insets = useSafeAreaInsets();
 
@@ -125,6 +127,16 @@ export default function BookScreen() {
     ]);
 
   const cover = coverFile(book);
+  const askCover = () =>
+    Alert.alert(
+      cover ? 'Kapak yeniden çizilsin mi?' : 'Kapak çizilsin mi?',
+      (coverJob?.error ? `Son deneme başarısız: ${coverJob.error}\n\n` : '') +
+        'Gemini kitabın konusuna göre bir kapak tarif eder, resimleri çizen kaynak (Cloudflare ya da bilgisayarınız) çizer.',
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        { text: 'Çiz', onPress: () => drawBookCover(book.id) },
+      ],
+    );
   const size = bookSize(book.id, `${book.updatedAt}:${book.downloaded.length}:${book.translated?.length ?? 0}`);
   const running = !!download?.running;
   const saved = book.progress && downloaded.has(book.progress.index) ? book.progress.index : null;
@@ -133,7 +145,21 @@ export default function BookScreen() {
   const header = (
     <View style={{ gap: 14 }}>
       <View style={{ flexDirection: 'row', gap: 14 }}>
-        {cover && <Image source={{ uri: cover.uri }} style={styles.cover} contentFit="cover" />}
+        {coverJob?.running ? (
+          <View style={[styles.cover, styles.coverEmpty]}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.coverNote}>Kapak çiziliyor…</Text>
+          </View>
+        ) : cover ? (
+          <Pressable onLongPress={book.coverAi ? askCover : undefined} delayLongPress={500}>
+            <Image source={{ uri: cover.uri }} style={styles.cover} contentFit="cover" />
+          </Pressable>
+        ) : (
+          <Pressable onPress={askCover} style={[styles.cover, styles.coverEmpty]}>
+            <Text style={{ fontSize: 26 }}>🎨</Text>
+            <Text style={styles.coverNote}>{coverJob?.error ? 'Çizilemedi, yeniden dene' : 'Kapak çiz'}</Text>
+          </Pressable>
+        )}
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={ui.h1}>{book.title}</Text>
           {!!book.author && <Text style={ui.muted}>{book.author}</Text>}
@@ -271,6 +297,8 @@ export default function BookScreen() {
 
 const styles = StyleSheet.create({
   cover: { width: 96, height: 138, borderRadius: 8, backgroundColor: colors.border },
+  coverEmpty: { alignItems: 'center', justifyContent: 'center', padding: 6 },
+  coverNote: { color: colors.muted, fontSize: 12, marginTop: 6, textAlign: 'center' },
   selectBar: {
     gap: 10,
     padding: 12,

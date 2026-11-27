@@ -33,6 +33,7 @@ import { parseGoogleDictionary, parseTdk, turkishStems } from '../src/lib/dictio
 import { tokenize } from '../src/lib/words';
 import { ZipWriter, crc32 } from '../src/lib/zipCore';
 import { multipartBody } from '../src/lib/multipart';
+import { base64ImageExt, coverPrompt, coverRequest } from '../src/lib/coverCore';
 import { searchParagraphs } from '../src/lib/searchCore';
 import { compareVersions, versionFromTag } from '../src/lib/updateCore';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
@@ -668,3 +669,17 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
   console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');
   process.exit(failures ? 1 : 0);
 })();
+
+// ---- AI covers ------------------------------------------------------------------
+{
+  assert.equal(base64ImageExt('iVBORw0KGgo'), 'png');
+  assert.equal(base64ImageExt('/9j/4AAQ'), 'jpg');
+  assert.equal(base64ImageExt('UklGRiQ'), 'webp');
+  const withScene = coverPrompt('X', 'blurb', 'A young man in white robes.');
+  assert.ok(withScene.startsWith('A young man in white robes.'));
+  assert.ok(/No text/.test(withScene));
+  const fallback = coverPrompt('Transcending the Nine Heavens', 'Chu Yang returns to his youth.');
+  assert.ok(fallback.includes('Transcending the Nine Heavens') && fallback.includes('Chu Yang'));
+  assert.ok(coverRequest('T', '', 'd').includes('Blurb: d'));
+  console.log('ok covers');
+}
