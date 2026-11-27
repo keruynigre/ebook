@@ -32,7 +32,7 @@ export type ComicCast = Record<string, string>;
 export type ArtMode = boolean | 'webtoon';
 
 const WEBTOON_STYLE =
-  'modern Chinese manhua webtoon art, full color digital painting, bold clean black lineart, sharp cel shading with soft gradients, glossy highlights, glowing energy effects, cinematic rim lighting, dramatic dynamic camera angle, strong perspective, beautiful idealized faces with sharp eyes, long flowing hair, detailed hanfu robes with gold trim, ancient Chinese setting';
+  '2d cultivation manhua art, crisp variable-weight black ink lineart, clean cel shading, sharp shadow planes, strong rim lighting, high contrast, full color, no text, no speech bubbles';
 
 /** Wuxia manhua look: black-and-white ink with screentones, full colour, or modern webtoon. */
 export function comicStyle(color: ArtMode): string {
@@ -160,6 +160,7 @@ export function panelPrompt(panel: ComicPanel, cast: ComicCast, color: ArtMode =
     })
     .filter(Boolean);
   const ref = refText(refs);
+  if (color === 'webtoon') return [ref, STYLE, panel.scene].filter(Boolean).join(', ').slice(0, MAX_PROMPT);
   const parts = [ref, STYLE, panel.scene, people.length ? `Characters: ${people.join('; ')}` : '', NO_TEXT].filter(Boolean);
   let prompt = parts.join('. ');
   if (prompt.length > MAX_PROMPT) {
@@ -211,11 +212,27 @@ export const comicSystem = (panels: [number, number] = [4, 6], webtoon = false) 
 /** Extra camera direction for the modern webtoon look (tall frames, dynamic angles). */
 export const WEBTOON_CAMERA = `
 
-Style of this book: a modern Chinese manhua webtoon. Every picture is a TALL VERTICAL frame, composed top to bottom. Direct the camera boldly, like the best webtoons:
-- Action and fights: strong dutch angle (frame tilted 20-40 degrees), extreme low angle or high bird's-eye view, dramatic foreshortening with a fist, palm or sword thrust toward the camera, fighters clashing diagonally across the frame, glowing lightning, flames or qi as the main light source, speed lines and motion blur.
-- Emotion and revelations: extreme close-up of the face or eyes, soft gradient background, a single drop of sweat, a cold glance.
-- Calm dialogue and power: elegant medium or full-body shot from a slightly low angle, the character seated or standing proudly, robes and long hair flowing.
-Start every "scene" with this camera choice (e.g. "Dutch-angle low shot, vertical frame: ...").`;
+STYLE OF THIS BOOK: modern Chinese manhua / Korean webtoon, drawn by a lightweight image model. The following rules REPLACE the "scene" rules above. Pictures are tall vertical frames.
+"scene" is NOT a paragraph: write 18 to 26 short comma-separated visual chunks, in this order:
+[camera & framing], [character lock & pose], [facial expression], [environment & lighting], [single dominant effect]
+Do not add the art style; it is added automatically.
+1. Camera & framing, pick ONE:
+- authority / dominance / menace: "low-angle shot, imposing silhouette, dramatic shadow"
+- shock / fear / betrayal: "extreme close-up on eyes, constricted pupils, sweat drop, tense brow"
+- combat / clash: "tilted dutch angle, dynamic mid-air clash, radial speed lines"
+- dialogue / reaction: "medium shot, foreground blurred shoulder framing, clear emotional focus"
+- setting / arrival / atmosphere: "wide establishing shot, grand traditional xianxia architecture" or "night sky with glowing full moon"
+- comedy / gag break: "super deformed chibi style, dark purple background, comical sweat drop"
+2. Acting:
+- cold, calculating character: "calm cold expression, half-lidded eyes, upper face veiled in dark shadow, piercing gaze, relaxed dominant posture"
+- rage / defiance: "fierce shouting expression, furrowed brows, outstretched hand" or "clenched fist"
+- character lock: for every named character write short fixed tags taken from their known look: hair color, hair style/length, core outfit colors (e.g. "long black hair, white and black cultivation robes"), always the same tags for the same person.
+3. ONE dominant effect only (or none in calm scenes):
+- lightning / speed: "crackling cyan-blue lightning arcs"
+- fire / wrath / burst: "surging orange-red flames and embers"
+- dark / villain aura: "dark purple-black shadow wisps"
+- impact / clash: "bright white impact flash, ground cracks"
+4. Safeguards: no sentences or clauses, no words like 8k, hyper-detailed, masterpiece, photorealistic. One main action and one main effect per picture; at most 2 characters in focus, everyone else as "blurred onlookers in background".`;
 
 export const COMIC_SYSTEM = `You are an experienced Chinese wuxia/xianxia manhua artist and storyboard director. You have illustrated many cultivation novels and know how to turn a written chapter into a few striking, cinematic pictures that make the reader feel the moment: the tension of a confrontation, the weight of a revelation, the power of a technique.
 Your task: choose the moments of this chapter that get an illustration inside the text, like the pictures in an illustrated novel, and write for each one the picture description an image model (FLUX) will draw from.
