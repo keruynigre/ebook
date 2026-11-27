@@ -215,7 +215,13 @@ export function CloudflareCard() {
           />
         ))}
       </View>
-      <Text style={ui.muted}>{QUALITIES.find((q) => q.id === settings.comicQuality)?.note}</Text>
+      <Text style={ui.muted}>
+        {(() => {
+          const note = QUALITIES.find((q) => q.id === settings.comicQuality)?.note ?? '';
+          // Modern manhua pictures are the same size turned upright.
+          return webtoon ? note.replace(/(\d+)×(\d+)/, (_, w, h) => `${h}×${w} (dikey)`) : note;
+        })()}
+      </Text>
 
       <Text style={[ui.text, { marginTop: 6 }]}>Bölüm başına resim sayısı</Text>
       <View style={[ui.row, { flexWrap: 'wrap' }]}>
