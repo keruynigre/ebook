@@ -160,7 +160,6 @@ export function panelPrompt(panel: ComicPanel, cast: ComicCast, color: ArtMode =
     })
     .filter(Boolean);
   const ref = refText(refs);
-  if (color === 'webtoon') return [ref, STYLE, panel.scene].filter(Boolean).join(', ').slice(0, MAX_PROMPT);
   const parts = [ref, STYLE, panel.scene, people.length ? `Characters: ${people.join('; ')}` : '', NO_TEXT].filter(Boolean);
   let prompt = parts.join('. ');
   if (prompt.length > MAX_PROMPT) {
@@ -212,32 +211,16 @@ export const comicSystem = (panels: [number, number] = [4, 6], webtoon = false) 
 /** Extra camera direction for the modern webtoon look (tall frames, dynamic angles). */
 export const WEBTOON_CAMERA = `
 
-STYLE OF THIS BOOK: modern Chinese manhua / Korean webtoon, drawn by a lightweight image model. The following rules REPLACE the "scene" rules above. Pictures are tall vertical frames.
-"scene" is NOT a paragraph: write 18 to 26 short comma-separated visual chunks, in this order:
-[camera & framing], [environment & lighting], [character lock & pose], [facial expression], [single dominant effect]
-Do not add the art style; it is added automatically.
-1. Camera & framing, pick ONE:
-- authority / dominance / menace: "low-angle shot, imposing silhouette, dramatic shadow"
-- shock / fear / betrayal: "extreme close-up on eyes, constricted pupils, sweat drop, tense brow"
-- combat / clash: "tilted dutch angle, dynamic mid-air clash, radial speed lines"
-- dialogue / reaction: "medium shot, foreground blurred shoulder framing, clear emotional focus"
-- setting / arrival / atmosphere: "wide establishing shot, grand traditional xianxia architecture" or "night sky with glowing full moon"
-- comedy / gag break: "super deformed chibi style, dark purple background, comical sweat drop"
-2. Acting:
-- cold, calculating character: "calm cold expression, half-lidded eyes, piercing gaze, relaxed dominant posture"
-- rage / defiance: "fierce shouting expression, furrowed brows, outstretched hand" or "clenched fist"
-- character lock: for every named character write short fixed tags taken from their known look: hair color, hair style/length, core outfit colors (e.g. "long black hair, white and black cultivation robes"), always the same tags for the same person.
-3. ONE dominant effect only (or none in calm scenes):
-- lightning / speed: "crackling cyan-blue lightning arcs"
-- fire / wrath / burst: "surging orange-red flames and embers"
-- dark / villain aura: "dark purple-black shadow wisps"
-- impact / clash: "bright white impact flash, ground cracks"
-4. Variety (IMPORTANT, the pictures of a chapter must not look alike):
-- never the same framing twice in a row; at least half of the pictures are wide or medium shots where the place is clearly visible (hall, courtyard, cliff, sky, crowd, sect gate)
-- characters are seen from the side, three-quarter view, from behind, from above or below, not standing centered facing the viewer
-- not every picture shows a fighting stance or a shouting face: use calm, sitting, walking, looking away, two people facing each other, a close-up of a hand, sword or eyes
-- the effect is optional; calm scenes have none
-5. Safeguards: no sentences or clauses, no words like 8k, hyper-detailed, masterpiece, photorealistic. One main action and one main effect per picture; at most 2 characters in focus, everyone else as "blurred onlookers in background".`;
+STYLE OF THIS BOOK: modern Chinese manhua / donghua. Pictures are tall vertical frames. The art style is added automatically; do not write it. These rules replace the "scene" rules above.
+The picture MUST show exactly what happens in its paragraph: the same people, the same action, the same place. A reader who sees it next to that paragraph must recognise the moment at once. Never invent a romantic or posed couple, a woman, or a person who is not in the text there.
+"scene": 50 to 90 English words in plain sentences, in this order:
+1. Camera and framing (pick what fits the moment): low-angle shot for authority or menace; close-up on the face or eyes for shock and revelations; tilted dynamic angle with speed lines for combat; medium shot of two people facing each other for dialogue, with the listeners visible; wide establishing shot of the place for arrivals, crowds, councils and big scenery; chibi gag style only for comedy.
+2. Who is visible: say how many people, and for EACH their gender, rough age (young man, old man with white beard, middle-aged woman...), clothing and where they stand. Groups are written as groups ("a circle of grim old martial masters in dark robes").
+3. What they are doing right now and their faces (frowning, shaking his head, pointing, kneeling, laughing coldly...).
+4. The place, time and light (great hall, battlefield, cliff, night, torchlight...).
+5. At most one effect (lightning, flames, dark aura, impact flash, glowing qi), none in calm scenes.
+Variety: never the same framing twice in a row; at least half of the pictures show the place clearly; characters seen from the side, three-quarter view, from behind or from above, not all standing centered facing the viewer; not every picture is a fight.
+Do not use words like 8k, masterpiece, photorealistic; never ask for written text or speech bubbles.`;
 
 export const COMIC_SYSTEM = `You are an experienced Chinese wuxia/xianxia manhua artist and storyboard director. You have illustrated many cultivation novels and know how to turn a written chapter into a few striking, cinematic pictures that make the reader feel the moment: the tension of a confrontation, the weight of a revelation, the power of a technique.
 Your task: choose the moments of this chapter that get an illustration inside the text, like the pictures in an illustrated novel, and write for each one the picture description an image model (FLUX) will draw from.
