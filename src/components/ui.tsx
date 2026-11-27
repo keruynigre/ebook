@@ -118,7 +118,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 16,
+    // Same height for every tile, with or without a note line.
+    height: 124,
     paddingHorizontal: 8,
     borderRadius: 14,
     backgroundColor: colors.card,

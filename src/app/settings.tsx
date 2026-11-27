@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { CloudflareCard } from '../components/CloudflareCard';
 import { UpdateCard } from '../components/UpdateCard';
@@ -149,28 +149,7 @@ export default function SettingsScreen() {
             kendiliğinden geçer. “Flash” modelleri hızlıdır ve ücretsiz kullanım hakkı vardır.
           </Text>
           {busy && !models && <Text style={ui.muted}>Modeller yükleniyor…</Text>}
-          {models?.slice(0, 12).map((m) => {
-            const selected = m.name === settings.geminiModel;
-            return (
-              <Pressable
-                key={m.name}
-                onPress={() => setSettings({ geminiModel: m.name })}
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: selected ? colors.accent : colors.border,
-                  backgroundColor: selected ? '#2a2317' : 'transparent',
-                }}
-              >
-                <Text style={[ui.text, { fontWeight: selected ? '700' : '400' }]}>
-                  {selected ? '● ' : '○ '}
-                  {m.displayName}
-                </Text>
-                <Text style={ui.muted}>{m.name.replace(/^models\//, '')}</Text>
-              </Pressable>
-            );
-          })}
+          {!!models?.length && <ModelPicker models={models.slice(0, 12)} value={settings.geminiModel} />}
         </Card>
       )}
 
@@ -299,5 +278,76 @@ export default function SettingsScreen() {
         kullanılabilir. Anahtarınız yalnızca bu telefonda saklanır ve sadece Google'a gönderilir.
       </Text>
     </ScrollView>
+  );
+}
+
+const short = (name: string) => name.replace(/^models\//, '');
+
+/** One field showing the chosen model; tapping it opens the list in a pop-up. */
+function ModelPicker({ models, value }: { models: GeminiModel[]; value?: string }) {
+  const [open, setOpen] = useState(false);
+  const current = models.find((m) => m.name === value);
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: 12,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: colors.accent,
+          backgroundColor: '#2a2317',
+        }}
+        accessibilityLabel="Model seç"
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={[ui.text, { fontWeight: '700' }]}>{current?.displayName ?? 'Model seçin'}</Text>
+          {!!value && <Text style={ui.muted}>{short(value)}</Text>}
+        </View>
+        <Text style={{ color: colors.accent, fontSize: 18, marginLeft: 8 }}>▾</Text>
+      </Pressable>
+      <Modal visible={open} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setOpen(false)}>
+        <Pressable
+          onPress={() => setOpen(false)}
+          style={{ flex: 1, backgroundColor: '#000a', justifyContent: 'center', padding: 24 }}
+        >
+          <Pressable
+            onPress={() => undefined}
+            style={{ maxHeight: '80%', borderRadius: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, padding: 12 }}
+          >
+            <Text style={[ui.h2, { marginBottom: 8, paddingHorizontal: 4 }]}>Model seç</Text>
+            <ScrollView contentContainerStyle={{ gap: 8 }}>
+              {models.map((m) => {
+                const selected = m.name === value;
+                return (
+                  <Pressable
+                    key={m.name}
+                    onPress={() => {
+                      setSettings({ geminiModel: m.name });
+                      setOpen(false);
+                    }}
+                    style={{
+                      padding: 10,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: selected ? colors.accent : colors.border,
+                      backgroundColor: selected ? '#2a2317' : 'transparent',
+                    }}
+                  >
+                    <Text style={[ui.text, { fontWeight: selected ? '700' : '400' }]}>
+                      {selected ? '● ' : '○ '}
+                      {m.displayName}
+                    </Text>
+                    <Text style={ui.muted}>{short(m.name)}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
