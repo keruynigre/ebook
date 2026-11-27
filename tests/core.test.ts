@@ -37,7 +37,7 @@ import { base64ImageExt, coverPrompt, coverRequest } from '../src/lib/coverCore'
 import { searchParagraphs } from '../src/lib/searchCore';
 import { compareVersions, versionFromTag } from '../src/lib/updateCore';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
-import { autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { aliasesFor, needsProfile, parseProfiles, profileFor, autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -682,4 +682,21 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
   assert.ok(fallback.includes('Transcending the Nine Heavens') && fallback.includes('Chu Yang'));
   assert.ok(coverRequest('T', '', 'd').includes('Blurb: d'));
   console.log('ok covers');
+}
+
+// ---- short character cards ---------------------------------------------------------
+{
+  const base = { name: 'Tian Bu Hui', aliases: ['Young Master Tian', 'Genç Efendi Tian'], firstChapter: 0, lastChapter: 9, seenIn: [0, 1, 2, 3, 4] };
+  const notes = [0, 1, 2, 3, 4].map((chapter) => ({ chapter, text: `not ${chapter}`, en: `note ${chapter}` }));
+  const c = { ...base, notes };
+  assert.equal(needsProfile({ ...c, notes: notes.slice(0, 2) }, 9), false);
+  assert.equal(needsProfile(c, 9), true);
+  const cards = parseProfiles({ characters: [{ name: 'Tian Bu Hui', traits_tr: ['a', 'b', 'c', 'd', 'e', 'f'], traits_en: ['x'], aliases_tr: ['Genç Efendi Tian'], aliases_en: ['Young Master Tian'] }] });
+  assert.equal(cards['Tian Bu Hui'].traitsTr.length, 5);
+  const withCard = { ...c, profile: { ...cards['Tian Bu Hui'], upTo: 4, noteCount: 5 } };
+  assert.equal(needsProfile(withCard, 9), false);
+  assert.equal(profileFor(withCard, 3), undefined); // written from later chapters: not shown
+  assert.deepEqual(aliasesFor(withCard, 'en', 9), ['Young Master Tian']);
+  assert.deepEqual(aliasesFor(c, 'en', 9), ['Young Master Tian']);
+  console.log('ok character cards');
 }

@@ -20,6 +20,19 @@ export interface NotebookCharacter {
   lastChapter: number;
   /** Chapters they appear in. */
   seenIn: number[];
+  /** Short card written by Gemini from the notes up to `upTo`: the most telling traits and nicknames per language. */
+  profile?: CharacterProfile;
+}
+
+export interface CharacterProfile {
+  /** Last chapter the notes behind this card came from (never shown before the reader gets there). */
+  upTo: number;
+  /** How many notes (up to `upTo`) the card was written from. */
+  noteCount: number;
+  traitsTr: string[];
+  traitsEn: string[];
+  aliasesTr: string[];
+  aliasesEn: string[];
 }
 
 export interface Notebook {
@@ -314,4 +327,59 @@ export function autoChapters(nb: Notebook, missing: number[], upTo: number): num
   if (!missing.length || missing.length > AUTO_MAX) return [];
   const fromStart = !!nb.summaries['0'] || upTo < AUTO_MAX;
   return fromStart ? missing : [];
+}
+
+// ---- short character cards ------------------------------------------------------
+
+export const MAX_TRAITS = 5;
+/** A character gets a short card once it has this many notes; fewer notes are shown as they are. */
+export const PROFILE_MIN_NOTES = 4;
+/** The card is written again after this many new notes. */
+export const PROFILE_REFRESH = 4;
+
+/** The card that may be shown at reading point `upTo` (none if it was written from later chapters). */
+export function profileFor(c: NotebookCharacter, upTo: number): CharacterProfile | undefined {
+  const p = c.profile;
+  return p && p.upTo <= upTo && p.traitsTr.length ? p : undefined;
+}
+
+/** Whether the character's card is missing or behind its notes up to `upTo`. */
+export function needsProfile(c: NotebookCharacter, upTo: number): boolean {
+  const notes = c.notes.filter((n) => n.chapter <= upTo).length;
+  if (notes < PROFILE_MIN_NOTES && c.aliases.length < 4) return false;
+  const p = c.profile;
+  if (!p || p.upTo > upTo) return true;
+  return notes - p.noteCount >= PROFILE_REFRESH;
+}
+
+/** Nicknames in the reader's language: from the card, else the saved ones that look right for the language. */
+export function aliasesFor(c: NotebookCharacter, lang: 'tr' | 'en', upTo: number): string[] {
+  const p = profileFor(c, upTo);
+  if (p) return lang === 'tr' ? p.aliasesTr : p.aliasesEn;
+  const tr = (a: string) => isTurkishName(a) || /[çğıöşüÇĞİÖŞÜ]/.test(a);
+  return c.aliases.filter((a) => (lang === 'tr' ? true : !tr(a))).slice(0, 4);
+}
+
+const strings = (v: unknown, max: number) =>
+  (Array.isArray(v) ? v : [])
+    .filter((x): x is string => typeof x === 'string' && !!x.trim())
+    .map((x) => x.trim())
+    .slice(0, max);
+
+/** Parse Gemini's cards; keyed by the character's name as it was sent. */
+export function parseProfiles(data: any): Record<string, Omit<CharacterProfile, 'upTo' | 'noteCount'>> {
+  const out: Record<string, Omit<CharacterProfile, 'upTo' | 'noteCount'>> = {};
+  for (const c of Array.isArray(data?.characters) ? data.characters : []) {
+    if (typeof c?.name !== 'string' || !c.name.trim()) continue;
+    const traitsTr = strings(c.traits_tr, MAX_TRAITS);
+    const traitsEn = strings(c.traits_en, MAX_TRAITS);
+    if (!traitsTr.length && !traitsEn.length) continue;
+    out[c.name.trim()] = {
+      traitsTr: traitsTr.length ? traitsTr : traitsEn,
+      traitsEn: traitsEn.length ? traitsEn : traitsTr,
+      aliasesTr: strings(c.aliases_tr, 4),
+      aliasesEn: strings(c.aliases_en, 4),
+    };
+  }
+  return out;
 }

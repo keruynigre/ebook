@@ -5,11 +5,11 @@
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { GeminiError, analyzeChapters, findSameCharacters } from './gemini';
+import { GeminiError, analyzeChapters, findSameCharacters, profileCharacters } from './gemini';
 import { getBook } from './library';
 import { ModelPool } from './modelPool';
 import { refreshModelList } from './models';
-import { autoChapters, chapterNeedsWork, knownCharacterList, mergeCharacterGroups, noteText, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
+import { needsProfile, parseProfiles, autoChapters, chapterNeedsWork, knownCharacterList, mergeCharacterGroups, noteText, chaptersWithCast, clearChapterNotes, dropTurkishNames, emptyNotebook, mergeChapterInfo, type ChapterInfo, type Notebook } from './notebookCore';
 import { getGeminiKey, getSettings } from './settings';
 import { loadChapter, loadNotebookFile, loadTranslation, saveNotebookFile } from './storage';
 
@@ -269,6 +269,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
       setJob(bookId, { ...job });
       await sleep(4_000); // stay under the free tier's per-minute limit
     }
+    await writeProfiles(bookId, upTo, pool, key, (message) => setJob(bookId, { ...job, message })).catch(() => undefined);
     setJob(bookId, {
       running: false,
       done: job.done,
@@ -330,5 +331,80 @@ export async function joinSameCharacters(bookId: string): Promise<number> {
   } catch (e) {
     setJob(bookId, { running: false, done: 0, total: 1, message: '', error: (e as Error).message });
     throw e;
+  }
+}
+
+// ---- short character cards ----------------------------------------------------------
+
+const PROFILE_BATCH = 15;
+const PROFILE_MAX = 60;
+
+/** Writes (or renews) the short cards of the most seen characters whose notes have grown. */
+async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key: string, say: (m: string) => void): Promise<void> {
+  const book = getBook(bookId);
+  if (!book) return;
+  const todo = (await loadNotebook(bookId)).characters
+    .filter((c) => c.firstChapter <= upTo && needsProfile(c, upTo))
+    .sort((a, b) => b.seenIn.length - a.seenIn.length)
+    .slice(0, PROFILE_MAX);
+  for (let at = 0; at < todo.length; at += PROFILE_BATCH) {
+    if (stopRequested.has(bookId)) return;
+    const batch = todo.slice(at, at + PROFILE_BATCH).map((c) => {
+      const notes = c.notes.filter((n) => n.chapter <= upTo);
+      return {
+        c,
+        noteCount: notes.length,
+        last: Math.max(c.firstChapter, ...notes.map((n) => n.chapter)),
+        send: { name: c.name, aliases: c.aliases, notes: notes.map((n) => noteText(n, 'en').slice(0, 220)) },
+      };
+    });
+    say(`Karakter kartları yazılıyor (${Math.min(at + PROFILE_BATCH, todo.length)}/${todo.length})`);
+    let data: any = null;
+    for (let tries = 0; !data && tries < 6; tries++) {
+      const choice = pool.pick();
+      if (!choice) return;
+      if ('waitMs' in choice) {
+        await sleep(Math.min(choice.waitMs, 15_000));
+        continue;
+      }
+      try {
+        data = await profileCharacters(key, choice.model, book.title, batch.map((b) => b.send));
+      } catch (e) {
+        if (!(e instanceof GeminiError)) throw e;
+        if (e.kind === 'busy' || e.kind === 'rate' || e.kind === 'daily') pool.report(choice.model, e.kind, e.retryAfterMs);
+        else if (e.kind === 'unsupported') pool.report(choice.model, 'daily');
+        else if (e.kind !== 'other') throw e;
+      }
+    }
+    if (!data) return;
+    const cards = parseProfiles(data);
+    await update(bookId, (nb) => ({
+      ...nb,
+      characters: nb.characters.map((c) => {
+        const b = batch.find((x) => x.c.name === c.name);
+        const card = b && cards[c.name];
+        return card ? { ...c, profile: { ...card, upTo: b.last, noteCount: b.noteCount } } : c;
+      }),
+    }));
+    await sleep(4_000);
+  }
+}
+
+/** Called when the notebook is opened: renews cards that are missing or behind (no chapters are read). */
+export async function refreshProfiles(bookId: string, upTo: number): Promise<void> {
+  if (jobs.get(bookId)?.running) return;
+  const key = await getGeminiKey();
+  const settings = getSettings();
+  if (!key || !settings.geminiModel) return;
+  const nb = await loadNotebook(bookId);
+  if (!nb.characters.some((c) => c.firstChapter <= upTo && needsProfile(c, upTo))) return;
+  stopRequested.delete(bookId);
+  const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
+  setJob(bookId, { running: true, done: 0, total: 0, message: 'Karakter kartları yazılıyor' });
+  try {
+    await writeProfiles(bookId, upTo, pool, key, (message) => setJob(bookId, { running: true, done: 0, total: 0, message }));
+    setJob(bookId, { running: false, done: 0, total: 0, message: '' });
+  } catch (e) {
+    setJob(bookId, { running: false, done: 0, total: 0, message: '', error: (e as Error).message });
   }
 }

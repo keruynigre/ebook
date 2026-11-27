@@ -6,8 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
-import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
-import { displayName, mergeCharacterGroups, normName, noteText, type NotebookCharacter } from '../../lib/notebookCore';
+import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, refreshProfiles, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
+import { aliasesFor, displayName, mergeCharacterGroups, normName, noteText, profileFor, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
 import { colors } from '../../lib/theme';
@@ -26,6 +26,8 @@ export default function NotebookScreen() {
   const [tab, setTab] = useState<Tab>('characters');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
+  // Character whose chapter-by-chapter notes are shown under the short card.
+  const [showAll, setShowAll] = useState<string | null>(null);
   const [glossary, setGlossary] = useState<GlossaryEntry[] | null>(null);
   const [editing, setEditing] = useState<{ index: number; source: string; target: string } | null>(null);
   // Character chosen to be joined with another one ("same person").
@@ -42,6 +44,10 @@ export default function NotebookScreen() {
 
   // Never show what lies beyond the reading point.
   const upTo = book?.progress?.index ?? (book?.downloaded.length ? Math.max(...book.downloaded) : -1);
+  // Short character cards: write the missing ones when the notebook is opened.
+  useEffect(() => {
+    if (upTo >= 0) refreshProfiles(id, upTo).catch(() => undefined);
+  }, [id, upTo]);
   const missing = useMemo(() => (nb && book ? missingChapters(id, nb, upTo, lang) : []), [nb, book, id, upTo, lang]);
   const q = normName(query);
 
@@ -157,7 +163,8 @@ export default function NotebookScreen() {
           <>
             <ProgressBar value={job.total ? job.done / job.total : 0} />
             <Text style={ui.muted}>
-              {job.message} · {job.done}/{job.total}
+              {job.message}
+              {job.total ? ` · ${job.done}/${job.total}` : ''}
             </Text>
             <Button small variant="secondary" title="Durdur" onPress={() => stopNotebookJob(id)} />
           </>
@@ -234,22 +241,47 @@ export default function NotebookScreen() {
           renderItem={({ item: c }) => {
             const expanded = open === c.name;
             const notes = c.notes.filter((n) => n.chapter <= upTo);
+            const card = profileFor(c, upTo);
+            const traits = card ? (lang === 'tr' ? card.traitsTr : card.traitsEn) : null;
+            const aliases = aliasesFor(c, lang, upTo);
+            const showNotes = !traits || showAll === c.name;
             return (
               <Pressable onPress={() => setOpen(expanded ? null : c.name)} onLongPress={() => characterMenu(c)} style={styles.item}>
                 <View style={[ui.row, { justifyContent: 'space-between' }]}>
                   <Text style={styles.name}>{displayName(c, lang)}</Text>
                   <Text style={{ color: colors.muted }}>{expanded ? '▴' : '▾'}</Text>
                 </View>
-                {!!c.aliases.length && <Text style={ui.muted}>Diğer adları: {c.aliases.join(', ')}</Text>}
+                {!!aliases.length && <Text style={ui.muted}>{lang === 'tr' ? 'Diğer adları' : 'Also called'}: {aliases.join(', ')}</Text>}
                 <Text style={ui.muted}>
                   {c.firstChapter + 1}. bölümde tanıtıldı · {c.seenIn.filter((x) => x <= upTo).length} bölümde geçiyor
                 </Text>
-                {!expanded && !!notes.length && (
+                {!expanded && (traits ? (
                   <Text style={ui.text} numberOfLines={2}>
-                    {noteText(notes[0], lang)}
+                    {traits.join(' · ')}
                   </Text>
+                ) : (
+                  !!notes.length && (
+                    <Text style={ui.text} numberOfLines={2}>
+                      {noteText(notes[0], lang)}
+                    </Text>
+                  )
+                ))}
+                {expanded &&
+                  traits?.map((t, k) => (
+                    <Text key={`t${k}`} style={ui.text}>
+                      <Text style={{ color: colors.accent }}>• </Text>
+                      {t}
+                    </Text>
+                  ))}
+                {expanded && traits && notes.length > 0 && (
+                  <Pressable onPress={() => setShowAll(showAll === c.name ? null : c.name)} hitSlop={6}>
+                    <Text style={[ui.muted, { color: colors.accent, marginTop: 4 }]}>
+                      {showAll === c.name ? 'Bölüm notlarını gizle ▴' : `Bölüm notları (${notes.length}) ▾`}
+                    </Text>
+                  </Pressable>
                 )}
                 {expanded &&
+                  showNotes &&
                   notes.map((n, k) => (
                     <Text key={k} style={ui.text}>
                       <Text style={{ color: colors.accent }}>{n.chapter + 1}. </Text>

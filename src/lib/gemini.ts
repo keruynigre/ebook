@@ -454,3 +454,41 @@ ${JSON.stringify(characters.map((c) => ({ name: c.name, aliases: c.aliases, note
     .map((g: unknown[]) => g.filter((n): n is string => typeof n === 'string' && !!n.trim()))
     .filter((g: string[]) => g.length >= 2);
 }
+
+/** Short cards for characters: at most five telling traits and the nicknames, in Turkish and English. */
+export async function profileCharacters(
+  key: string,
+  model: string,
+  bookTitle: string,
+  characters: { name: string; aliases: string[]; notes: string[] }[],
+): Promise<any> {
+  const system = `You keep the character list of a novel short and useful for a reader.
+For each character, using ONLY the notes given (never knowledge of later events), write:
+- traits_tr / traits_en: at most 5 of the most defining facts, most important first: who they are (role, sect, family), their relation to the main character, look, power or cultivation level, personality. Each trait 2-8 words, no full sentences, no chapter events.
+- aliases_tr / aliases_en: at most 4 nicknames or titles, Turkish in aliases_tr ("Genç Efendi Tian"), English in aliases_en ("Young Master Tian"). Personal names (pinyin) stay the same in both and are not repeated as nicknames.
+Use the names exactly as given. Answer only with the requested JSON.`;
+  const prompt = `Novel: ${bookTitle}\n\nCharacters (JSON):\n${JSON.stringify(characters)}`;
+  const list = { type: 'ARRAY', items: { type: 'STRING' } };
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      characters: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: { name: { type: 'STRING' }, traits_tr: list, traits_en: list, aliases_tr: list, aliases_en: list },
+          required: ['name', 'traits_tr', 'traits_en'],
+        },
+      },
+    },
+    required: ['characters'],
+  };
+  return generateJson(
+    key,
+    model,
+    system,
+    prompt,
+    schema,
+    '\n\nAnswer format: {"characters": [{"name": string, "traits_tr": [string], "traits_en": [string], "aliases_tr": [string], "aliases_en": [string]}]}',
+  );
+}
