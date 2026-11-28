@@ -221,8 +221,9 @@ Pick paragraphs with something visible happening (an attack, an arrival, a crowd
 1. Camera: wide shot for groups, battles, arrivals and big places; medium shot for two or three people; close-up only for a single strong reaction; low or high angle when it adds power.
 2. Who is visible: how many people, and for each (or each group) gender, rough age (young man, old man with white beard...), clothing and position in the frame.
 3. What they are doing right now, as in the text, and their expressions.
-4. The place, time and light.
-5. At most one effect (lightning, flames, dark aura, impact flash, glowing qi), none in calm scenes.
+4. Space: turn every distance, height and position in the text into composition. People far apart ("seventy feet apart", "across the square") are small figures on opposite sides of an extreme wide shot with empty space between them, never side by side. People in the sky float high above the ground, seen from below with the crowd's heads in the foreground, never standing on the ground. Someone on a wall, cliff or stage is above the others. Keep who faces whom.
+5. The place, time and light.
+6. At most one effect (lightning, flames, dark aura, impact flash, glowing qi), none in calm scenes.
 Variety: never the same camera twice in a row; at least half of the pictures are wide shots where the place and everyone involved are visible; a shouting face or an outstretched hand toward the viewer at most once per chapter; variety changes the camera, never what happens.
 Do not use words like 8k, masterpiece, photorealistic; never ask for written text or speech bubbles.`;
 
