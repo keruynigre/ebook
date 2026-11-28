@@ -337,7 +337,7 @@ export async function joinSameCharacters(bookId: string): Promise<number> {
 // ---- short character cards ----------------------------------------------------------
 
 const PROFILE_BATCH = 15;
-const PROFILE_MAX = 60;
+const PROFILE_MAX = 400;
 
 /** Writes (or renews) the short cards of the most seen characters whose notes have grown. */
 async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key: string, say: (m: string) => void): Promise<void> {
@@ -407,4 +407,17 @@ export async function refreshProfiles(bookId: string, upTo: number): Promise<voi
   } catch (e) {
     setJob(bookId, { running: false, done: 0, total: 0, message: '', error: (e as Error).message });
   }
+}
+
+/**
+ * "Baştan düzenle": joins records of the same person, throws away every short card and writes
+ * them again from the notes up to the reading point.
+ */
+export async function rebuildNotebook(bookId: string, upTo: number): Promise<void> {
+  if (jobs.get(bookId)?.running) return;
+  await joinSameCharacters(bookId).catch(() => 0);
+  await update(bookId, (nb) => ({ ...nb, characters: nb.characters.map(({ profile: _drop, ...c }) => c) }));
+  await refreshProfiles(bookId, upTo);
+  const job = jobs.get(bookId);
+  if (job && !job.error) setJob(bookId, { ...job, message: 'Defter baştan düzenlendi.' });
 }

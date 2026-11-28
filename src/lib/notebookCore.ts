@@ -319,21 +319,22 @@ export function parseChapterInfo(data: any): ChapterInfo {
 export const AUTO_MAX = 3;
 
 /**
- * Chapters to fill in on their own after moving to a new chapter: only when the notebook
- * follows the story from its first chapter and just a few recent ones are missing.
- * A notebook started mid-story (or far behind) is left to the "Güncelle" button.
+ * Chapters to fill in on their own after moving to a new chapter: the missing ones among the
+ * last few chapters up to the reading point, wherever the notebook started. An empty notebook
+ * far into the book is left to the "Güncelle" button.
  */
 export function autoChapters(nb: Notebook, missing: number[], upTo: number): number[] {
-  if (!missing.length || missing.length > AUTO_MAX) return [];
-  const fromStart = !!nb.summaries['0'] || upTo < AUTO_MAX;
-  return fromStart ? missing : [];
+  const recent = missing.filter((i) => i <= upTo && i > upTo - AUTO_MAX);
+  if (!recent.length) return [];
+  const started = Object.keys(nb.summaries).length > 0 || nb.characters.length > 0 || upTo < AUTO_MAX;
+  return started ? recent : [];
 }
 
 // ---- short character cards ------------------------------------------------------
 
 export const MAX_TRAITS = 5;
 /** A character gets a short card once it has this many notes; fewer notes are shown as they are. */
-export const PROFILE_MIN_NOTES = 4;
+export const PROFILE_MIN_NOTES = 3;
 /** The card is written again after this many new notes. */
 export const PROFILE_REFRESH = 4;
 
@@ -382,4 +383,26 @@ export function parseProfiles(data: any): Record<string, Omit<CharacterProfile, 
     };
   }
   return out;
+}
+
+// ---- main and side characters ----------------------------------------------------
+
+/** Notes shown for a character without a short card. */
+export const MAX_NOTES_SHOWN = 5;
+/** A main character is seen in at least this many chapters (up to the reading point)... */
+export const MAIN_MIN_CHAPTERS = 5;
+/** ...and is among the this many most seen. */
+export const MAIN_MAX = 12;
+
+/**
+ * Splits the cast at reading point `upTo`: main characters (most seen, most seen first) and
+ * side characters (most recently seen first, so the new faces of the last chapters are on top).
+ */
+export function splitCast<T extends NotebookCharacter>(list: T[], upTo: number): { main: T[]; side: T[] } {
+  const seen = (c: T) => c.seenIn.filter((x) => x <= upTo);
+  const bySeen = [...list].sort((a, b) => seen(b).length - seen(a).length || a.firstChapter - b.firstChapter);
+  const main = bySeen.filter((c) => seen(c).length >= MAIN_MIN_CHAPTERS).slice(0, MAIN_MAX);
+  const last = (c: T) => Math.max(c.firstChapter, ...seen(c));
+  const side = list.filter((c) => !main.includes(c)).sort((a, b) => last(b) - last(a) || seen(b).length - seen(a).length);
+  return { main, side };
 }

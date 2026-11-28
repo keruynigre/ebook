@@ -37,7 +37,7 @@ import { base64ImageExt, coverPrompt, coverRequest } from '../src/lib/coverCore'
 import { searchParagraphs } from '../src/lib/searchCore';
 import { compareVersions, versionFromTag } from '../src/lib/updateCore';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
-import { aliasesFor, needsProfile, parseProfiles, profileFor, autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { aliasesFor, splitCast, needsProfile, parseProfiles, profileFor, autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -374,16 +374,23 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(nb2.characters[0].notes.length, 2);
   });
 
-  await test('notebook fills itself only when kept from the first chapter', () => {
+  await test('notebook fills the last few chapters on its own, wherever it started', () => {
     const fromStart = { characters: [], summaries: { '0': 'Başlangıç.' }, summariesEn: {} };
     const midStory = { characters: [], summaries: { '400': 'Orta.' }, summariesEn: {} };
     assert.deepEqual(autoChapters(fromStart, [41], 41), [41]);
     assert.deepEqual(autoChapters(fromStart, [39, 40, 41], 41), [39, 40, 41]);
-    assert.deepEqual(autoChapters(fromStart, [10, 20, 30, 41], 41), []);
+    assert.deepEqual(autoChapters(fromStart, [10, 20, 30, 41], 41), [41]);
     assert.deepEqual(autoChapters(fromStart, [], 41), []);
-    assert.deepEqual(autoChapters(midStory, [401], 401), []);
+    assert.deepEqual(autoChapters(midStory, [0, 1, 2, 401], 401), [401]);
     assert.deepEqual(autoChapters(emptyNotebook(), [0, 1], 1), [0, 1]);
     assert.deepEqual(autoChapters(emptyNotebook(), [499, 500], 500), []);
+  });
+
+  await test('cast is split into main and side characters', () => {
+    const ch = (name: string, seenIn: number[]) => ({ name, aliases: [], notes: [], firstChapter: seenIn[0], lastChapter: seenIn[seenIn.length - 1], seenIn });
+    const { main, side } = splitCast([ch('Old', [1, 2]), ch('Chu Yang', [0, 1, 2, 3, 4, 5, 6]), ch('Mo', [2, 3, 4, 5, 6]), ch('New', [9])], 10);
+    assert.deepEqual(main.map((c) => c.name), ['Chu Yang', 'Mo']);
+    assert.deepEqual(side.map((c) => c.name), ['New', 'Old']);
   });
 
   await test('old one-language notebook chapters are redone for the reader language', () => {

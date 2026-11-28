@@ -6,8 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
-import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, refreshProfiles, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
-import { aliasesFor, displayName, mergeCharacterGroups, normName, noteText, profileFor, type NotebookCharacter } from '../../lib/notebookCore';
+import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, rebuildNotebook, refreshProfiles, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
+import { aliasesFor, displayName, MAX_NOTES_SHOWN, mergeCharacterGroups, normName, noteText, profileFor, splitCast, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
 import { colors } from '../../lib/theme';
@@ -58,6 +58,14 @@ export default function NotebookScreen() {
       : list;
     return filtered.sort((a, b) => b.seenIn.length - a.seenIn.length || a.firstChapter - b.firstChapter);
   }, [nb, q, upTo, lang]);
+  // Main characters first, then side characters (newest faces on top), each under a heading.
+  const rows = useMemo(() => {
+    const { main, side } = splitCast(characters, upTo);
+    const out: ({ heading: string } | NotebookCharacter)[] = [];
+    if (main.length) out.push({ heading: `Ana karakterler · ${main.length}` }, ...main);
+    if (side.length) out.push({ heading: `Yan karakterler · ${side.length}` }, ...side);
+    return out;
+  }, [characters, upTo]);
 
   const summaries = useMemo(() => {
     const en = nb?.summariesEn ?? {};
@@ -146,6 +154,21 @@ export default function NotebookScreen() {
     joinSameCharacters(id).catch(() => undefined);
   };
 
+  const rebuild = () => {
+    if (!settings.hasGeminiKey) {
+      Alert.alert('Gemini anahtarı gerekli', 'Bunun için Ayarlar’dan Gemini anahtarınızı girin.');
+      return;
+    }
+    Alert.alert(
+      'Defter baştan düzenlensin mi?',
+      'Aynı kişinin kayıtları birleştirilir ve her karakterin kısa kartı (en fazla 5 madde) okuduğun yere kadarki notlardan yeniden yazılır. Bölüm notları silinmez. Birkaç dakika sürebilir.',
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        { text: 'Düzenle', onPress: () => rebuildNotebook(id, upTo).catch(() => undefined) },
+      ],
+    );
+  };
+
   const deleteCharacter = (c: NotebookCharacter) =>
     Alert.alert(`${displayName(c, lang)} defterden silinsin mi?`, 'Yanlış ya da gereksiz bir kayıtsa silebilirsiniz.', [
       { text: 'Vazgeç', style: 'cancel' },
@@ -176,7 +199,7 @@ export default function NotebookScreen() {
                 : `Defter ${upTo + 1}. bölüme kadar güncel.`}
             </Text>
             <Text style={ui.muted}>
-              Defter ilk bölümden tutuluyorsa yeni bölüme geçince kendiliğinden güncellenir. Kitaba ortasından başladıysan ya da çok bölüm eksikse “Güncelle”ye bas. Okuduğun yerden ilerisi gösterilmez.
+              Yeni bölüme geçince son okuduğun bölümler deftere kendiliğinden eklenir. Daha eski eksik bölümler için “Güncelle”ye bas. Okuduğun yerden ilerisi gösterilmez.
             </Text>
             {missing.length > 0 && <Button title={`Güncelle (${missing.length} bölüm)`} onPress={fill} />}
             {!!job?.error && <Text style={ui.error}>{job.error}</Text>}
@@ -215,6 +238,7 @@ export default function NotebookScreen() {
       />
       {tab === 'characters' && (nb?.characters.length ?? 0) > 1 && !job?.running && (
         <>
+          <Button small variant="secondary" title="Baştan düzenle (birleştir + kartları yeniden yaz)" onPress={rebuild} />
           <Button small variant="secondary" title="Aynı kişileri bul ve birleştir" onPress={findSame} />
           <Text style={ui.muted}>Bir karaktere basılı tutarak elle birleştirebilir ya da silebilirsin.</Text>
         </>
@@ -232,17 +256,20 @@ export default function NotebookScreen() {
       <Stack.Screen options={{ title: 'Hikâye defteri' }} />
       {tab === 'characters' && (
         <FlatList
-          data={characters}
-          keyExtractor={(c) => c.name}
+          data={rows}
+          keyExtractor={(c) => ('heading' in c ? `#${c.heading}` : c.name)}
           ListHeaderComponent={header}
           ListEmptyComponent={empty(nb ? 'Henüz karakter yok. “Güncelle” ile okuduğun bölümleri deftere işleyebilirsin.' : 'Yükleniyor…')}
           contentContainerStyle={{ padding: 16, paddingBottom: 16 + insets.bottom }}
           keyboardShouldPersistTaps="handled"
-          renderItem={({ item: c }) => {
+          renderItem={({ item }) => {
+            if ('heading' in item) return <Text style={[styles.name, { color: colors.accent, marginTop: 8, marginBottom: 4 }]}>{item.heading}</Text>;
+            const c = item;
             const expanded = open === c.name;
             const notes = c.notes.filter((n) => n.chapter <= upTo);
             const card = profileFor(c, upTo);
-            const traits = card ? (lang === 'tr' ? card.traitsTr : card.traitsEn) : null;
+            // Without a card, at most the latest few notes stand in for it; the rest are behind "Bölüm notları".
+            const traits = card ? (lang === 'tr' ? card.traitsTr : card.traitsEn) : notes.length > MAX_NOTES_SHOWN ? notes.slice(-MAX_NOTES_SHOWN).map((n) => noteText(n, lang)) : null;
             const aliases = aliasesFor(c, lang, upTo);
             const showNotes = !traits || showAll === c.name;
             return (
