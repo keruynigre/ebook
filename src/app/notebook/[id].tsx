@@ -165,6 +165,7 @@ export default function NotebookScreen() {
       Alert.alert('Gemini anahtarı gerekli', 'Bunun için Ayarlar’dan Gemini anahtarınızı girin.');
       return;
     }
+    if (job?.running) stopNotebookJob(id);
     joinSameCharacters(id).catch(() => undefined);
   };
 
@@ -265,7 +266,7 @@ export default function NotebookScreen() {
         placeholderTextColor={colors.muted}
         style={ui.input}
       />
-      {tab === 'characters' && (nb?.characters.length ?? 0) > 1 && !job?.running && (
+      {tab === 'characters' && (nb?.characters.length ?? 0) > 1 && (
         <>
           <Button small variant="secondary" title="Baştan düzenle (birleştir + kartları yeniden yaz)" onPress={rebuild} />
           <Button small variant="secondary" title="Aynı kişileri bul ve birleştir" onPress={findSame} />

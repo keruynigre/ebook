@@ -89,10 +89,16 @@ export interface NotebookJob {
 }
 
 const jobs = new Map<string, NotebookJob>();
-const stopRequested = new Set<string>();
+/** Each "Durdur" starts a new run number; work started under an older number stops and stays silent. */
+const runs = new Map<string, number>();
+const runOf = (id: string) => runs.get(id) ?? 0;
 const setJob = (id: string, j: NotebookJob) => {
   jobs.set(id, j);
   emit();
+};
+/** setJob, unless this work was stopped in the meantime. */
+const setRun = (id: string, run: number, j: NotebookJob) => {
+  if (runOf(id) === run) setJob(id, j);
 };
 
 export function useNotebookJob(bookId: string): NotebookJob | undefined {
@@ -118,8 +124,11 @@ const BATCH_CHARS = 28_000;
 const BATCH_MAX = 5;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Stops the notebook work at once (what is still on its way is dropped) and frees the buttons. */
 export function stopNotebookJob(bookId: string) {
-  stopRequested.add(bookId);
+  runs.set(bookId, runOf(bookId) + 1);
+  const j = jobs.get(bookId);
+  setJob(bookId, { running: false, done: j?.done ?? 0, total: j?.total ?? 0, message: j?.running ? 'Durduruldu.' : (j?.message ?? '') });
 }
 
 /**
@@ -141,12 +150,12 @@ export async function autoFillNotebook(bookId: string, upTo: number, lang: 'tr' 
 
 export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'en', only?: number[]): Promise<void> {
   if (jobs.get(bookId)?.running) return;
-  stopRequested.delete(bookId);
+  const run = runOf(bookId);
   const book = getBook(bookId);
   const key = await getGeminiKey();
   const settings = getSettings();
   if (!book || !key || !settings.geminiModel) {
-    setJob(bookId, {
+    setRun(bookId, run, {
       running: false,
       done: 0,
       total: 0,
@@ -162,7 +171,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
     total: todo.length,
     message: 'Hazırlanıyor…',
   };
-  setJob(bookId, { ...job });
+  setRun(bookId, run, { ...job });
   const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
   let at = 0;
   let modelsRefreshed = false;
@@ -172,7 +181,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
   let skipped = 0;
   try {
     while (at < todo.length) {
-      if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
+      if (runOf(bookId) !== run) throw new Error('Durduruldu.');
       // Next batch: a few chapters, Turkish text when there is one.
       const batch: { index: number; title: string; paragraphs: string[] }[] = [];
       let chars = 0;
@@ -192,11 +201,11 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
       let results: { index: number; info: ChapterInfo }[] = [];
       let unreadable = false;
       for (;;) {
-        if (stopRequested.has(bookId)) throw new Error('Durduruldu.');
+        if (runOf(bookId) !== run) throw new Error('Durduruldu.');
         let choice = pool.pick();
         if (!choice && !modelsRefreshed) {
           modelsRefreshed = true;
-          setJob(bookId, {
+          setRun(bookId, run, {
             ...job,
             message: 'Gemini model listesi yenileniyor',
           });
@@ -205,7 +214,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
         }
         if (!choice) throw new Error('Gemini’nin bugünkü kullanım hakkı doldu. Yarın kaldığı yerden devam edebilirsiniz.');
         if ('waitMs' in choice) {
-          setJob(bookId, {
+          setRun(bookId, run, {
             ...job,
             message: `Gemini yoğun, ${Math.ceil(choice.waitMs / 1000)} sn bekleniyor`,
           });
@@ -213,7 +222,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
           continue;
         }
         try {
-          setJob(bookId, {
+          setRun(bookId, run, {
             ...job,
             message: `${usable[0]?.index + 1}–${usable[usable.length - 1]?.index + 1}. bölümler okunuyor`,
           });
@@ -251,7 +260,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
         failures = 0;
         at += batch.length;
         job.done = at;
-        setJob(bookId, { ...job });
+        setRun(bookId, run, { ...job });
         continue;
       }
       failures = 0;
@@ -266,11 +275,11 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
       }
       at += batch.length;
       job.done = at;
-      setJob(bookId, { ...job });
+      setRun(bookId, run, { ...job });
       await sleep(4_000); // stay under the free tier's per-minute limit
     }
-    await writeProfiles(bookId, upTo, pool, key, (message) => setJob(bookId, { ...job, message })).catch(() => undefined);
-    setJob(bookId, {
+    await writeProfiles(bookId, upTo, pool, key, (message) => setRun(bookId, run, { ...job, message }), run).catch(() => undefined);
+    setRun(bookId, run, {
       running: false,
       done: job.done,
       total: job.total,
@@ -279,7 +288,7 @@ export async function fillNotebook(bookId: string, upTo: number, lang: 'tr' | 'e
         : `${job.done} bölüm deftere işlendi.`,
     });
   } catch (e) {
-    setJob(bookId, {
+    setRun(bookId, run, {
       running: false,
       done: job.done,
       total: job.total,
@@ -340,7 +349,7 @@ const PROFILE_BATCH = 15;
 const PROFILE_MAX = 400;
 
 /** Writes (or renews) the short cards of the most seen characters whose notes have grown. */
-async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key: string, say: (m: string) => void): Promise<void> {
+async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key: string, say: (m: string) => void, run = runOf(bookId)): Promise<void> {
   const book = getBook(bookId);
   if (!book) return;
   const todo = (await loadNotebook(bookId)).characters
@@ -348,7 +357,7 @@ async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key:
     .sort((a, b) => b.seenIn.length - a.seenIn.length)
     .slice(0, PROFILE_MAX);
   for (let at = 0; at < todo.length; at += PROFILE_BATCH) {
-    if (stopRequested.has(bookId)) return;
+    if (runOf(bookId) !== run) return;
     const batch = todo.slice(at, at + PROFILE_BATCH).map((c) => {
       const notes = c.notes.filter((n) => n.chapter <= upTo);
       return {
@@ -361,6 +370,7 @@ async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key:
     say(`Karakter kartları yazılıyor (${Math.min(at + PROFILE_BATCH, todo.length)}/${todo.length})`);
     let data: any = null;
     for (let tries = 0; !data && tries < 6; tries++) {
+      if (runOf(bookId) !== run) return;
       const choice = pool.pick();
       if (!choice) return;
       if ('waitMs' in choice) {
@@ -377,6 +387,7 @@ async function writeProfiles(bookId: string, upTo: number, pool: ModelPool, key:
       }
     }
     if (!data) return;
+    if (runOf(bookId) !== run) return;
     const cards = parseProfiles(data);
     await update(bookId, (nb) => ({
       ...nb,
@@ -398,14 +409,14 @@ export async function refreshProfiles(bookId: string, upTo: number): Promise<voi
   if (!key || !settings.geminiModel) return;
   const nb = await loadNotebook(bookId);
   if (!nb.characters.some((c) => c.firstChapter <= upTo && needsProfile(c, upTo))) return;
-  stopRequested.delete(bookId);
+  const run = runOf(bookId);
   const pool = new ModelPool(settings.geminiModel, settings.geminiModels ?? []);
-  setJob(bookId, { running: true, done: 0, total: 0, message: 'Karakter kartları yazılıyor' });
+  setRun(bookId, run, { running: true, done: 0, total: 0, message: 'Karakter kartları yazılıyor' });
   try {
-    await writeProfiles(bookId, upTo, pool, key, (message) => setJob(bookId, { running: true, done: 0, total: 0, message }));
-    setJob(bookId, { running: false, done: 0, total: 0, message: '' });
+    await writeProfiles(bookId, upTo, pool, key, (message) => setRun(bookId, run, { running: true, done: 0, total: 0, message }), run);
+    setRun(bookId, run, { running: false, done: 0, total: 0, message: '' });
   } catch (e) {
-    setJob(bookId, { running: false, done: 0, total: 0, message: '', error: (e as Error).message });
+    setRun(bookId, run, { running: false, done: 0, total: 0, message: '', error: (e as Error).message });
   }
 }
 
@@ -414,7 +425,7 @@ export async function refreshProfiles(bookId: string, upTo: number): Promise<voi
  * them again from the notes up to the reading point.
  */
 export async function rebuildNotebook(bookId: string, upTo: number): Promise<void> {
-  if (jobs.get(bookId)?.running) return;
+  if (jobs.get(bookId)?.running) stopNotebookJob(bookId);
   await joinSameCharacters(bookId).catch(() => 0);
   await update(bookId, (nb) => ({ ...nb, characters: nb.characters.map(({ profile: _drop, ...c }) => c) }));
   await refreshProfiles(bookId, upTo);
@@ -427,7 +438,7 @@ export async function rebuildNotebook(bookId: string, upTo: number): Promise<voi
  * reading point again. Names the reader chose are kept and reused.
  */
 export async function resetNotebook(bookId: string, upTo: number, lang: 'tr' | 'en'): Promise<void> {
-  if (jobs.get(bookId)?.running) return;
+  if (jobs.get(bookId)?.running) stopNotebookJob(bookId);
   await update(bookId, (nb) => ({
     characters: nb.characters
       .filter((c) => c.pinned)
