@@ -214,34 +214,17 @@ export const comicSystem = (panels: [number, number] = [4, 6], webtoon = false) 
 /** Extra camera direction for the modern webtoon look (tall frames, dynamic angles). */
 export const WEBTOON_CAMERA = `
 
-STYLE OF THIS BOOK: modern Chinese manhua / Korean webtoon, drawn by a lightweight image model. The following rules REPLACE the "scene" rules above. Pictures are tall vertical frames.
-"scene" is NOT a paragraph: write 18 to 26 short comma-separated visual chunks, in this order:
-[camera & framing], [environment & lighting], [character lock & pose], [facial expression], [single dominant effect]
-Do not add the art style; it is added automatically.
-0. Faithfulness (MOST IMPORTANT, above every other rule): the picture shows exactly what happens in its paragraph and the lines around it. Only the people actually present there, doing what the text says, in the relation the text gives (a leader questioning a group of elders, an old man shaking his head, two armies facing each other). Count them: if the text speaks of a group, show a group. Never add a romantic couple, an embrace, a hand on a shoulder or a tender look unless the text says so. If the picture alone would not let a reader guess the moment, rewrite it.
-1. Camera & framing, pick ONE:
-- authority / dominance / menace: "low-angle shot, imposing silhouette, dramatic shadow"
-- shock / fear / betrayal: "extreme close-up on eyes, constricted pupils, sweat drop, tense brow"
-- combat / clash: "tilted dutch angle, dynamic mid-air clash, radial speed lines"
-- dialogue / reaction: "medium shot, foreground blurred shoulder framing, clear emotional focus"
-- setting / arrival / atmosphere: "wide establishing shot, grand traditional xianxia architecture" or "night sky with glowing full moon"
-- comedy / gag break: "super deformed chibi style, dark purple background, comical sweat drop"
-2. Acting:
-- cold, calculating character: "calm cold expression, half-lidded eyes, piercing gaze, relaxed dominant posture"
-- rage / defiance: "fierce shouting expression, furrowed brows, outstretched hand" or "clenched fist"
-- character lock: for every named character write short fixed tags taken from their known look: hair color, hair style/length, core outfit colors (e.g. "long black hair, white and black cultivation robes"), always the same tags for the same person.
-3. ONE dominant effect only (or none in calm scenes):
-- lightning / speed: "crackling cyan-blue lightning arcs"
-- fire / wrath / burst: "surging orange-red flames and embers"
-- dark / villain aura: "dark purple-black shadow wisps"
-- impact / clash: "bright white impact flash, ground cracks"
-4. Variety (IMPORTANT, the pictures of a chapter must not look alike):
-- never the same framing twice in a row; at least half of the pictures are wide or medium shots where the place is clearly visible (hall, courtyard, cliff, sky, crowd, sect gate)
-- characters are seen from the side, three-quarter view, from behind, from above or below, not standing centered facing the viewer
-- not every picture shows a fighting stance or a shouting face: calm scenes may be sitting, walking, a council, a crowd, a close-up of a hand, sword or eyes, but only when the text has that moment
-- variety never overrides faithfulness: change the camera, not what happens
-- the effect is optional; calm scenes have none
-5. Safeguards: no sentences or clauses, no words like 8k, hyper-detailed, masterpiece, photorealistic. One main action and one main effect per picture; at most 2 characters in focus, everyone else as "blurred onlookers in background".`;
+STYLE OF THIS BOOK: modern Chinese manhua / donghua, drawn by a strong image model that understands full sentences. Pictures are tall vertical frames. The art style is added automatically; do not write it. These rules replace the "scene" rules above.
+FAITHFULNESS (most important, above every other rule): the picture shows exactly what happens in its paragraph: the same people, the same NUMBER of people, the same action, the same place. If three Martial Monarchs attack together, draw three old men attacking together, not one man shouting. If a leader questions a group of elders, draw the leader and the group. A reader who sees the picture next to the paragraph must recognise the moment at once. Never invent a romantic couple, an embrace, a woman or anyone who is not there.
+Pick paragraphs with something visible happening (an attack, an arrival, a crowd reacting, a technique, an injury, a council), not lines where someone only talks or thinks.
+"scene": 50 to 90 English words in plain sentences, in this order:
+1. Camera: wide shot for groups, battles, arrivals and big places; medium shot for two or three people; close-up only for a single strong reaction; low or high angle when it adds power.
+2. Who is visible: how many people, and for each (or each group) gender, rough age (young man, old man with white beard...), clothing and position in the frame.
+3. What they are doing right now, as in the text, and their expressions.
+4. The place, time and light.
+5. At most one effect (lightning, flames, dark aura, impact flash, glowing qi), none in calm scenes.
+Variety: never the same camera twice in a row; at least half of the pictures are wide shots where the place and everyone involved are visible; a shouting face or an outstretched hand toward the viewer at most once per chapter; variety changes the camera, never what happens.
+Do not use words like 8k, masterpiece, photorealistic; never ask for written text or speech bubbles.`;
 
 export const COMIC_SYSTEM = `You are an experienced Chinese wuxia/xianxia manhua artist and storyboard director. You have illustrated many cultivation novels and know how to turn a written chapter into a few striking, cinematic pictures that make the reader feel the moment: the tension of a confrontation, the weight of a revelation, the power of a technique.
 Your task: choose the moments of this chapter that get an illustration inside the text, like the pictures in an illustrated novel, and write for each one the picture description an image model (FLUX) will draw from.

@@ -1,6 +1,6 @@
 {
   "name": "ebook",
-  "version": "1.0.39",
+  "version": "1.0.40",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo-google-fonts/atkinson-hyperlegible": "^0.4.1",
