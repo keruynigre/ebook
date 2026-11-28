@@ -437,7 +437,7 @@ export async function findSameCharacters(
   bookTitle: string,
 ): Promise<string[][]> {
   const system = `Bir romanın karakter listesindeki tekrarları buluyorsun. Aynı kişinin farklı adlarla (gerçek adı, lakabı, "X's Father" gibi tanımı) ayrı kaydedildiği grupları ver.
-Her grubun ilk adı tutulacak ana ad olsun: kişinin gerçek adı (pinyin) varsa o, yoksa en açık tanım. Takma kimlik, kılık değiştirmiş ad ya da unvan asla ana ad olmaz (ör. ana karakter bir süre başka adla dolaşıyorsa ana ad yine gerçek adıdır). Bir kaydın ana adı böyle bir takma adsa ve gerçek adı aliases içinde geçiyorsa, o kaydı tek başına da olsa gerçek adı önde olacak şekilde grup olarak ver (ör. ["Gerçek Ad", "Takma Ad"]). Yalnızca notlardan ve adlardan emin olduğun eşleşmeleri ver; emin değilsen gruplama. Tekrar yoksa boş liste ver.
+Her grubun ilk adı tutulacak ana ad olsun: kişinin gerçek adı (pinyin) varsa o, yoksa en açık tanım. Unvan ya da lakap ana ad olmaz. Farklı gerçek adı (pinyin) olan iki kaydı yalnızca roman açıkça aynı kişi olduklarını söylüyorsa birleştir; ortak bir unvan ("Senior Chu", "Minister") ya da yakın ilişki (kardeş, arkadaş, usta) aynı kişi olmak demek değildir.
 Adları listede yazıldığı gibi aynen kullan. Yanıtı yalnızca istenen JSON biçiminde ver.`;
   const prompt = `Roman: ${bookTitle}
 

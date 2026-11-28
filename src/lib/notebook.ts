@@ -421,3 +421,19 @@ export async function rebuildNotebook(bookId: string, upTo: number): Promise<voi
   const job = jobs.get(bookId);
   if (job && !job.error) setJob(bookId, { ...job, message: 'Defter baştan düzenlendi.' });
 }
+
+/**
+ * "Sıfırdan kur": forgets every character and summary and reads the chapters up to the
+ * reading point again. Names the reader chose are kept and reused.
+ */
+export async function resetNotebook(bookId: string, upTo: number, lang: 'tr' | 'en'): Promise<void> {
+  if (jobs.get(bookId)?.running) return;
+  await update(bookId, (nb) => ({
+    characters: nb.characters
+      .filter((c) => c.pinned)
+      .map((c) => ({ name: c.name, nameTr: c.nameTr, aliases: [], notes: [], firstChapter: c.firstChapter, lastChapter: c.firstChapter, seenIn: [], pinned: true })),
+    summaries: {},
+    summariesEn: {},
+  }));
+  await fillNotebook(bookId, upTo, lang);
+}

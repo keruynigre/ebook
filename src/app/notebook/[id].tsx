@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
-import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, rebuildNotebook, refreshProfiles, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
+import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, rebuildNotebook, resetNotebook, refreshProfiles, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
 import { aliasesFor, displayName, MAX_NOTES_SHOWN, mergeCharacterGroups, normName, renameCharacter, noteText, profileFor, splitCast, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
@@ -168,6 +168,21 @@ export default function NotebookScreen() {
     joinSameCharacters(id).catch(() => undefined);
   };
 
+  const reset = () => {
+    if (!settings.hasGeminiKey) {
+      Alert.alert('Gemini anahtarı gerekli', 'Bunun için Ayarlar’dan Gemini anahtarınızı girin.');
+      return;
+    }
+    Alert.alert(
+      'Defter sıfırdan kurulsun mu?',
+      `Tüm karakterler ve özetler silinir, okuduğun ${upTo + 1} bölüm baştan okunup yeniden yazılır. Yanlış birleşmiş karakterler böylece ayrılır. Uzun sürer; Gemini hakkı biterse ertesi gün “Güncelle” ile kaldığı yerden devam eder. Elle verdiğin adlar korunur.`,
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        { text: 'Sıfırdan kur', style: 'destructive', onPress: () => resetNotebook(id, upTo, lang).catch(() => undefined) },
+      ],
+    );
+  };
+
   const rebuild = () => {
     if (!settings.hasGeminiKey) {
       Alert.alert('Gemini anahtarı gerekli', 'Bunun için Ayarlar’dan Gemini anahtarınızı girin.');
@@ -254,6 +269,7 @@ export default function NotebookScreen() {
         <>
           <Button small variant="secondary" title="Baştan düzenle (birleştir + kartları yeniden yaz)" onPress={rebuild} />
           <Button small variant="secondary" title="Aynı kişileri bul ve birleştir" onPress={findSame} />
+          <Button small variant="danger" title="Defteri sıfırdan kur" onPress={reset} />
           <Text style={ui.muted}>Bir karaktere basılı tutarak adını değiştirebilir, elle birleştirebilir ya da silebilirsin.</Text>
         </>
       )}

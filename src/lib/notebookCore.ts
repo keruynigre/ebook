@@ -249,6 +249,9 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
     for (const a of aliases) {
       const j = findExact(characters, a);
       if (j < 0 || j === k) continue;
+      // Two people with their own real names ("Chu Yang", "Gu Du Xing") are not joined because a
+      // title ("Senior Chu") was given for both; only the reader or "Aynı kişileri bul" joins them.
+      if (k >= 0 && !isLabel(characters[k].name) && !isLabel(characters[j].name) && normName(a) !== normName(characters[j].name)) continue;
       if (k < 0) k = j;
       else {
         const [keep, drop] = [Math.min(k, j), Math.max(k, j)];

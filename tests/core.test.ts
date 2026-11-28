@@ -406,6 +406,15 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.equal(viaGroup.characters[0].name, 'Chu Yang');
   });
 
+  await test('a shared title does not join two named people', () => {
+    let nb: any = { characters: [
+      { name: 'Chu Yang', aliases: ['Senior Chu'], notes: [], firstChapter: 1, lastChapter: 2, seenIn: [1, 2] },
+      { name: 'Gu Du Xing', aliases: [], notes: [], firstChapter: 1, lastChapter: 2, seenIn: [1, 2] },
+    ], summaries: {}, summariesEn: {} };
+    nb = mergeChapterInfo(nb, 3, { characters: [{ name: 'Gu Du Xing', aliases: ['Senior Chu'], description: 'x' }] });
+    assert.deepEqual(nb.characters.map((c: any) => c.name).sort(), ['Chu Yang', 'Gu Du Xing']);
+  });
+
   await test('cast is split into main and side characters', () => {
     const ch = (name: string, seenIn: number[]) => ({ name, aliases: [], notes: [], firstChapter: seenIn[0], lastChapter: seenIn[seenIn.length - 1], seenIn });
     const { main, side } = splitCast([ch('Old', [1, 2]), ch('Chu Yang', [0, 1, 2, 3, 4, 5, 6]), ch('Mo', [2, 3, 4, 5, 6]), ch('New', [9])], 10);
