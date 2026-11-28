@@ -435,7 +435,8 @@ async function drawChapter(bookId: string, index: number) {
       update({ message: `${p + 1}. kare çiziliyor…` });
       try {
         const panel = script.panels[p];
-        const seed = tries ? undefined : 1000 + index * 31 + p;
+        // A new seed every time, so "Yeniden çiz" really gives a different picture.
+        const seed = Math.floor(Math.random() * 2_147_483_647);
         let image: string;
         if (tries < 2) {
           // FLUX.2 with the style picture and the characters' reference cards.
