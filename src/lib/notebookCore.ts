@@ -22,6 +22,8 @@ export interface NotebookCharacter {
   seenIn: number[];
   /** Short card written by Gemini from the notes up to `upTo`: the most telling traits and nicknames per language. */
   profile?: CharacterProfile;
+  /** The reader chose the main name; it is never replaced on its own. */
+  pinned?: boolean;
 }
 
 export interface CharacterProfile {
@@ -185,12 +187,18 @@ export function betterName(next: string, current: string): boolean {
   const cl = isLabel(current);
   if (nl !== cl) return !nl;
   if (nl) return false;
-  return next.split(/\s+/).length > current.split(/\s+/).length;
+  // A fuller form of the same name ("Chu Yang" for "Yang"), never a different name such as a disguise.
+  const nw = normName(next).split(' ');
+  const cw = normName(current).split(' ');
+  return nw.length > cw.length && cw.every((w) => nw.includes(w));
 }
 
 /** One record for two that turned out to be the same person. The better name stays the main one. */
-export function joinCharacters(a: NotebookCharacter, b: NotebookCharacter): NotebookCharacter {
-  const [main, other] = betterName(b.name, a.name) ? [b, a] : [a, b];
+export function joinCharacters(a: NotebookCharacter, b: NotebookCharacter, keepFirst = false): NotebookCharacter {
+  // Otherwise: a chosen name stays, a fuller name wins, else the name seen in more chapters.
+  const bFirst =
+    !keepFirst && !a.pinned && (b.pinned || betterName(b.name, a.name) || (!betterName(a.name, b.name) && b.seenIn.length > a.seenIn.length));
+  const [main, other] = bFirst ? [b, a] : [a, b];
   const c: NotebookCharacter = {
     ...main,
     aliases: [...main.aliases],
@@ -216,7 +224,10 @@ export function mergeCharacterGroups(nb: Notebook, groups: string[][]): Notebook
     const idx = [...new Set(g.map((n) => findExact(characters, n)).filter((k) => k >= 0))];
     if (idx.length < 2) continue;
     let joined = characters[idx[0]];
-    for (const k of idx.slice(1)) joined = joinCharacters(joined, characters[k]);
+    for (const k of idx.slice(1)) joined = joinCharacters(joined, characters[k], true);
+    // The group's main name (the real name) may be only an alias of the record: make it the main name.
+    if (!joined.pinned && normName(g[0]) !== normName(joined.name) && joined.aliases.some((a) => normName(a) === normName(g[0])))
+      joined = renamed(joined, g[0].trim());
     const drop = new Set(idx.slice(1));
     characters = characters.map((c, k) => (k === idx[0] ? joined : c)).filter((_, k) => !drop.has(k));
   }
@@ -254,7 +265,8 @@ export function mergeChapterInfo(nb: Notebook, chapter: number, info: ChapterInf
     const nameTr = raw.nameTr?.trim();
     if (normName(name) !== normName(c.name)) {
       // Found only through an alias: the answer names the main name ("Wang Lin" for "Tie Zhu").
-      if (betterName(name, c.name) || (!byName && !isLabel(name))) {
+      // A new name for an established character (often a disguise) stays an alias.
+      if (!c.pinned && (betterName(name, c.name) || (!byName && !isLabel(name) && (isLabel(c.name) || c.seenIn.length < 5)))) {
         addAlias(c, c.name);
         if (c.nameTr) addAlias(c, c.nameTr);
         c.name = name;
@@ -405,4 +417,28 @@ export function splitCast<T extends NotebookCharacter>(list: T[], upTo: number):
   const last = (c: T) => Math.max(c.firstChapter, ...seen(c));
   const side = list.filter((c) => !main.includes(c)).sort((a, b) => last(b) - last(a) || seen(b).length - seen(a).length);
   return { main, side };
+}
+
+function renamed(c: NotebookCharacter, name: string): NotebookCharacter {
+  const out: NotebookCharacter = { ...c, name, nameTr: undefined, aliases: c.aliases.filter((a) => normName(a) !== normName(name)) };
+  addAlias(out, c.name);
+  if (c.nameTr) addAlias(out, c.nameTr);
+  return out;
+}
+
+/** The reader gives a character its main name; a record already under that name is joined in. */
+export function renameCharacter(nb: Notebook, name: string, newName: string): Notebook {
+  const to = newName.trim();
+  const k = nb.characters.findIndex((c) => c.name === name);
+  if (k < 0 || !to || to.length > 60) return nb;
+  let characters = [...nb.characters];
+  let c = characters[k];
+  const other = characters.findIndex((x, j) => j !== k && normName(x.name) === normName(to));
+  if (other >= 0) {
+    c = joinCharacters(c, characters[other], true);
+    characters = characters.filter((_, j) => j !== other);
+  }
+  const at = characters.findIndex((x) => x.name === name);
+  characters[at] = { ...(normName(c.name) === normName(to) ? c : renamed(c, to)), pinned: true };
+  return { ...nb, characters };
 }

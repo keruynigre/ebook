@@ -37,7 +37,7 @@ import { base64ImageExt, coverPrompt, coverRequest } from '../src/lib/coverCore'
 import { searchParagraphs } from '../src/lib/searchCore';
 import { compareVersions, versionFromTag } from '../src/lib/updateCore';
 import { cardPrompt, castNames, comicRequest, mergeCast, panelPrompt, panelSlots, parseComicScript } from '../src/lib/comicCore';
-import { aliasesFor, splitCast, needsProfile, parseProfiles, profileFor, autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
+import { aliasesFor, renameCharacter, splitCast, needsProfile, parseProfiles, profileFor, autoChapters, betterName, chapterNeedsWork, isLabel, knownCharacterList, mergeCharacterGroups, clearChapterNotes, displayName, dropTurkishNames, emptyNotebook, findCharacter, isTurkishName, mergeChapterInfo, noteText } from '../src/lib/notebookCore';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 let failures = 0;
@@ -384,6 +384,26 @@ async function test(name: string, fn: () => unknown | Promise<unknown>) {
     assert.deepEqual(autoChapters(midStory, [0, 1, 2, 401], 401), [401]);
     assert.deepEqual(autoChapters(emptyNotebook(), [0, 1], 1), [0, 1]);
     assert.deepEqual(autoChapters(emptyNotebook(), [499, 500], 500), []);
+  });
+
+  await test('a disguise name does not replace the main name; the reader can rename', () => {
+    const many = [1, 2, 3, 4, 5, 6, 7];
+    let nb: any = { characters: [{ name: 'Chu Yang', aliases: [], notes: [], firstChapter: 1, lastChapter: 7, seenIn: many }], summaries: {}, summariesEn: {} };
+    nb = mergeChapterInfo(nb, 8, { characters: [{ name: 'Gu Du Xing', aliases: ['Chu Yang'], description: 'Chu Yang in disguise.' }] });
+    assert.equal(nb.characters[0].name, 'Chu Yang');
+    assert.ok(nb.characters[0].aliases.includes('Gu Du Xing'));
+    assert.equal(betterName('Gu Du Xing', 'Chu Yang'), false);
+    assert.equal(betterName('Chu Yang', 'Yang'), true);
+    const wrong: any = { characters: [{ name: 'Gu Du Xing', aliases: ['Minister Chu'], notes: [], firstChapter: 1, lastChapter: 9, seenIn: many }], summaries: {}, summariesEn: {} };
+    const fixed = renameCharacter(wrong, 'Gu Du Xing', 'Chu Yang');
+    assert.equal(fixed.characters[0].name, 'Chu Yang');
+    assert.equal(fixed.characters[0].pinned, true);
+    assert.ok(fixed.characters[0].aliases.includes('Gu Du Xing'));
+    const again = mergeChapterInfo(fixed, 10, { characters: [{ name: 'Gu Du Xing', aliases: [], description: 'x' }] });
+    assert.equal(again.characters[0].name, 'Chu Yang');
+    const viaGroup = mergeCharacterGroups({ ...wrong, characters: [{ ...wrong.characters[0], aliases: ['Chu Yang'] }, { name: 'Senior Chu', aliases: [], notes: [], firstChapter: 3, lastChapter: 3, seenIn: [3] }] }, [['Chu Yang', 'Gu Du Xing', 'Senior Chu']]);
+    assert.equal(viaGroup.characters.length, 1);
+    assert.equal(viaGroup.characters[0].name, 'Chu Yang');
   });
 
   await test('cast is split into main and side characters', () => {

@@ -7,7 +7,7 @@ import { Button, Card, ProgressBar, ui } from '../../components/ui';
 import type { GlossaryEntry } from '../../lib/gemini';
 import { useBook } from '../../lib/library';
 import { editNotebook, fillNotebook, joinSameCharacters, missingChapters, rebuildNotebook, refreshProfiles, stopNotebookJob, useNotebook, useNotebookJob } from '../../lib/notebook';
-import { aliasesFor, displayName, MAX_NOTES_SHOWN, mergeCharacterGroups, normName, noteText, profileFor, splitCast, type NotebookCharacter } from '../../lib/notebookCore';
+import { aliasesFor, displayName, MAX_NOTES_SHOWN, mergeCharacterGroups, normName, renameCharacter, noteText, profileFor, splitCast, type NotebookCharacter } from '../../lib/notebookCore';
 import { useSettings } from '../../lib/settings';
 import { loadGlossary, saveGlossary } from '../../lib/storage';
 import { colors } from '../../lib/theme';
@@ -33,6 +33,8 @@ export default function NotebookScreen() {
   // Character chosen to be joined with another one ("same person").
   const [joining, setJoining] = useState<NotebookCharacter | null>(null);
   const [joinQuery, setJoinQuery] = useState('');
+  // Character being given a new main name, and the name typed so far.
+  const [renaming, setRenaming] = useState<{ name: string; to: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -127,17 +129,29 @@ export default function NotebookScreen() {
     ]);
 
   const characterMenu = (c: NotebookCharacter) =>
-    Alert.alert(displayName(c, lang), 'Bu kayıtla ne yapılsın?', [
-      { text: 'Vazgeç', style: 'cancel' },
-      { text: 'Sil', style: 'destructive', onPress: () => deleteCharacter(c) },
-      {
-        text: 'Aynı kişiyle birleştir',
-        onPress: () => {
-          setJoinQuery('');
-          setJoining(c);
+    Alert.alert(
+      displayName(c, lang),
+      'Bu kayıtla ne yapılsın? (Vazgeçmek için dışarı dokun.)',
+      [
+        { text: 'Sil', style: 'destructive', onPress: () => deleteCharacter(c) },
+        { text: 'Adını değiştir', onPress: () => setRenaming({ name: c.name, to: c.name }) },
+        {
+          text: 'Birleştir',
+          onPress: () => {
+            setJoinQuery('');
+            setJoining(c);
+          },
         },
-      },
-    ]);
+      ],
+      { cancelable: true },
+    );
+
+  const saveRename = () => {
+    if (!renaming) return;
+    const { name, to } = renaming;
+    setRenaming(null);
+    if (to.trim() && to.trim() !== name) editNotebook(id, (n) => renameCharacter(n, name, to)).catch(() => undefined);
+  };
 
   const joinWith = (other: NotebookCharacter) => {
     if (!joining) return;
@@ -240,7 +254,7 @@ export default function NotebookScreen() {
         <>
           <Button small variant="secondary" title="Baştan düzenle (birleştir + kartları yeniden yaz)" onPress={rebuild} />
           <Button small variant="secondary" title="Aynı kişileri bul ve birleştir" onPress={findSame} />
-          <Text style={ui.muted}>Bir karaktere basılı tutarak elle birleştirebilir ya da silebilirsin.</Text>
+          <Text style={ui.muted}>Bir karaktere basılı tutarak adını değiştirebilir, elle birleştirebilir ya da silebilirsin.</Text>
         </>
       )}
       {tab === 'glossary' && (
@@ -407,6 +421,24 @@ export default function NotebookScreen() {
               )}
               <Button variant="secondary" title="Vazgeç" onPress={() => setEditing(null)} style={{ flex: 1 }} />
               <Button title="Kaydet" onPress={saveTerm} style={{ flex: 1 }} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+      <Modal visible={!!renaming} transparent animationType="fade" onRequestClose={() => setRenaming(null)}>
+        <Pressable style={styles.backdrop} onPress={() => setRenaming(null)}>
+          <Pressable style={styles.dialog}>
+            <Text style={ui.h2}>Asıl adı</Text>
+            <Text style={ui.muted}>Karakterin gerçek adını yaz (ör. Chu Yang). Eski ad “Diğer adları”na geçer ve bu ad bir daha kendiliğinden değişmez.</Text>
+            <TextInput
+              value={renaming?.to ?? ''}
+              onChangeText={(t) => setRenaming((r) => (r ? { ...r, to: t } : r))}
+              autoFocus
+              style={ui.input}
+            />
+            <View style={ui.row}>
+              <Button variant="secondary" title="Vazgeç" onPress={() => setRenaming(null)} style={{ flex: 1 }} />
+              <Button title="Kaydet" onPress={saveRename} style={{ flex: 1 }} />
             </View>
           </Pressable>
         </Pressable>
